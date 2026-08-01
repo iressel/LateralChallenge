@@ -46,7 +46,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Correction evidence (2026-08-01):** Internal snapshot and programmer inconsistencies now throw safe `InvalidOperationException` failures before creating state operations; obsolete internal outcome codes were removed while valid CMS event outcomes and `GENERATION_EXHAUSTED` remain unchanged. Domain and solution Release builds passed with 0 warnings and 0 errors, the architecture test passed 1/1, `git diff --check` passed, only authorized files changed, and T004 remains unstarted.
   - **Suggested commit boundary:** Pure domain transition model.
 
-- [ ] **T004 — Implement event validation, canonical payload equality, and idempotency identity**
+- [x] **T004 — Implement event validation, canonical payload equality, and idempotency identity**
   - **Objective:** Add raw-array JSON envelope inspection, per-event/payload duplicate-name detection, case-sensitive wire `id` mapping to internal EntityId, trim-aware case-insensitive `type` normalization, known-field validation, canonical payload hashing, normalized event-content hashing, external/derived key namespacing, and size/range checks without mutating payload content.
   - **Expected files:** src/CmsSync.Application/EventIngestion/CmsEventArrayParser.cs; src/CmsSync.Application/EventIngestion/EventValidator.cs; src/CmsSync.Application/EventIngestion/CanonicalJson.cs; src/CmsSync.Application/EventIngestion/EventIdentityFactory.cs; related contracts/constants.
   - **Requirements / criteria:** FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, NFR-003, NFR-007; AC-009–AC-017, AC-054.
@@ -55,6 +55,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Dependencies:** T002, T003.
   - **Completion criteria:** The parser requires a raw array with no `events` wrapper; wire `id` is the only external entity property; type casing/whitespace variants produce the same canonical type and identity; exact redelivery produces a stable key; EventId reuse can compare a content hash; duplicate event/payload names are detected before permissive binding; and raw payload content is never logged or rewritten.
   - **Suggested commit boundary:** Validation and deterministic identity primitives.
+  - **Completion evidence (2026-08-01):** Added bounded raw-array parsing, per-item validation and duplicate-name detection, canonical payload hashing, normalized event-content hashing, namespaced external/derived identities, and construction of the existing validated Domain events. Direct review covered FR-006–FR-012, NFR-003, NFR-007, AC-009–AC-017, and AC-054. The Application and full solution Release builds passed with 0 warnings and 0 errors; all 133 EventIngestion/Architecture tests passed; full solution format verification and `git diff --check` passed; Domain remained unchanged; and T005 was not started.
 
 ## 4. State-machine unit tests
 
