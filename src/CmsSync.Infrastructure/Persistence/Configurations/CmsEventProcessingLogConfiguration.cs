@@ -35,7 +35,7 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
                     "[Version] IS NULL OR [Version] > 0");
                 tableBuilder.HasCheckConstraint(
                     "CK_CmsEventProcessingLogs_Generation_Positive",
-                    "[Generation] IS NULL OR [Generation] > 0");
+                    "[Generation] IS NULL OR [Generation] >= 0");
                 tableBuilder.HasCheckConstraint(
                     "CK_CmsEventProcessingLogs_ResultingVersion_Positive",
                     "[ResultingVersion] IS NULL OR [ResultingVersion] > 0");
@@ -70,6 +70,7 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
             .IsFixedLength();
         builder.Property(log => log.EventType)
             .HasMaxLength(PersistenceModelConstants.EventTypeMaxLength)
+            .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsUnicode(false);
         builder.Property(log => log.EntityId)
             .HasMaxLength(PersistenceModelConstants.EntityIdentifierMaxLength)
@@ -81,10 +82,12 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
             .HasPrecision(7);
         builder.Property(log => log.Outcome)
             .HasMaxLength(PersistenceModelConstants.ProcessingOutcomeMaxLength)
+            .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsUnicode(false)
             .IsRequired();
         builder.Property(log => log.Code)
             .HasMaxLength(PersistenceModelConstants.ProcessingCodeMaxLength)
+            .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsUnicode(false)
             .IsRequired();
         builder.Property(log => log.Generation)

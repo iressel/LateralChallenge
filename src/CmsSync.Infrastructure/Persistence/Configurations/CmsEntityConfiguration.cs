@@ -55,6 +55,7 @@ internal sealed class CmsEntityConfiguration : IEntityTypeConfiguration<CmsEntit
             .IsRequired();
         builder.Property(entity => entity.CmsPublicationStatus)
             .HasMaxLength(PersistenceModelConstants.PublicationStatusMaxLength)
+            .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsUnicode(false)
             .IsRequired();
         builder.Property(entity => entity.CurrentVersionOccurredAtUtc)

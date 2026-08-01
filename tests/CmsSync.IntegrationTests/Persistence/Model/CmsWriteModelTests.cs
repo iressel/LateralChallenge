@@ -57,6 +57,7 @@ public sealed class CmsWriteModelTests
             nameof(CmsEntity.CmsPublicationStatus));
         Assert.False(publicationStatus.IsNullable);
         Assert.Equal(PersistenceModelConstants.PublicationStatusMaxLength, publicationStatus.GetMaxLength());
+        Assert.Equal(PersistenceModelConstants.CaseSensitiveCollation, publicationStatus.GetCollation());
 
         AssertDateTime(entityType, nameof(CmsEntity.CurrentVersionOccurredAtUtc), nullable: false);
         AssertDateTime(entityType, nameof(CmsEntity.EntityEventHighWatermarkUtc), nullable: false);
@@ -246,8 +247,22 @@ public sealed class CmsWriteModelTests
         AssertColumnType(entityType, nameof(CmsEventProcessingLog.Generation), "bigint", nullable: true);
         AssertColumnType(entityType, nameof(CmsEventProcessingLog.ResultingVersion), "bigint", nullable: true);
 
+        foreach (var categoricalPropertyName in new[]
+                 {
+                     nameof(CmsEventProcessingLog.EventType),
+                     nameof(CmsEventProcessingLog.Outcome),
+                     nameof(CmsEventProcessingLog.Code),
+                 })
+        {
+            var categoricalProperty = PersistenceModelTestContext.GetRequiredProperty(
+                entityType,
+                categoricalPropertyName);
+            Assert.Equal(PersistenceModelConstants.CaseSensitiveCollation, categoricalProperty.GetCollation());
+        }
+
         var checks = CheckConstraintSql(entityType);
         Assert.Contains("[Sequence] >= 0", checks, StringComparer.Ordinal);
+        Assert.Contains("[Generation] IS NULL OR [Generation] >= 0", checks, StringComparer.Ordinal);
         Assert.Contains(
             "[Outcome] IN ('Applied', 'Duplicate', 'Equivalent', 'Stale', 'Invalid', 'Conflict')",
             checks,
