@@ -5,8 +5,60 @@ namespace CmsSync.UnitTests.EventIngestion;
 
 public sealed class EventIdentityFactoryTests
 {
+    public static TheoryData<string, string, string, string> GoldenIdentityVectors =>
+        new()
+        {
+            {
+                "publish",
+                EventIngestionTestHelper.Publish(),
+                "sha256:3708377F00ABA72C022B35434E1AF80546F3455300F48DEF872A7D4BC03C23EE",
+                "3708377F00ABA72C022B35434E1AF80546F3455300F48DEF872A7D4BC03C23EE"
+            },
+            {
+                "unpublish",
+                EventIngestionTestHelper.Publish(type: "unpublish"),
+                "sha256:09F651C1BEBAF43197AD502FCEAB3977D01D6A10C12F50C6E11C313468719607",
+                "09F651C1BEBAF43197AD502FCEAB3977D01D6A10C12F50C6E11C313468719607"
+            },
+            {
+                "delete",
+                EventIngestionTestHelper.Delete(),
+                "sha256:43134E735877F7C1B57050041FDDE738D55B1738A87206D4A04C08F50B7DA572",
+                "43134E735877F7C1B57050041FDDE738D55B1738A87206D4A04C08F50B7DA572"
+            },
+            {
+                "external EventId",
+                EventIngestionTestHelper.Publish(
+                    eventIdProperty: "\"eventId\":\"External-Golden\"",
+                    idProperty: "\"id\":\"entity-external\"",
+                    versionProperty: "\"version\":1",
+                    payloadProperty: "\"payload\":{}"),
+                "external:External-Golden",
+                "4E59D0044C3F32CAA1A219629477D4E048296BC19CEDF209C4C5B00672E36482"
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(GoldenIdentityVectors))]
+    public void GoldenIdentityHasReviewedStableKeyAndUppercaseContentHash(
+        string vectorName,
+        string eventJson,
+        string expectedKey,
+        string expectedContentHash)
+    {
+        var first = EventIngestionTestHelper.ValidateValid(eventJson);
+        var replay = EventIngestionTestHelper.ValidateValid(eventJson);
+
+        Assert.False(string.IsNullOrWhiteSpace(vectorName));
+        Assert.Equal(expectedKey, first.IdempotencyKey);
+        Assert.Equal(expectedContentHash, first.EventContentHash.ToString());
+        Assert.Matches("^[0-9A-F]{64}$", first.EventContentHash.ToString());
+        Assert.Equal(first.IdempotencyKey, replay.IdempotencyKey);
+        Assert.Equal(first.EventContentHash, replay.EventContentHash);
+    }
+
     [Fact]
-    public void ExactReplayWithoutEventIdUsesTheSameUppercaseDerivedKey()
+    public void AC017ExactReplayWithoutEventIdUsesTheSameUppercaseDerivedKey()
     {
         var first = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
         var replay = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
@@ -18,13 +70,17 @@ public sealed class EventIdentityFactoryTests
     }
 
     [Fact]
-    public void EventIdUsesTheExternalNamespaceAndPreservesExactValue()
+    public void AC015ExactReplayWithEventIdUsesTheSameExternalKeyAndContentHash()
     {
-        var validated = EventIngestionTestHelper.ValidateValid(
+        var first = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"Event-AbC\""));
+        var replay = EventIngestionTestHelper.ValidateValid(
             EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"Event-AbC\""));
 
-        Assert.Equal("external:Event-AbC", validated.IdempotencyKey);
-        Assert.Equal("Event-AbC", validated.EventId);
+        Assert.Equal("external:Event-AbC", first.IdempotencyKey);
+        Assert.Equal("Event-AbC", first.EventId);
+        Assert.Equal(first.IdempotencyKey, replay.IdempotencyKey);
+        Assert.Equal(first.EventContentHash, replay.EventContentHash);
     }
 
     [Fact]
@@ -40,7 +96,7 @@ public sealed class EventIdentityFactoryTests
     }
 
     [Fact]
-    public void SameEventIdWithDifferentKnownContentHasDifferentContentHashes()
+    public void AC016SameEventIdWithDifferentKnownContentHasDifferentContentHashes()
     {
         var first = EventIngestionTestHelper.ValidateValid(
             EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"same\""));

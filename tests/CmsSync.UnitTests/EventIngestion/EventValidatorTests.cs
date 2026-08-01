@@ -7,7 +7,7 @@ namespace CmsSync.UnitTests.EventIngestion;
 public sealed class EventValidatorTests
 {
     [Fact]
-    public void WireIdIsAcceptedMappedAndPreservedExactly()
+    public void AC013WireIdIsAcceptedMappedAndPreservedExactly()
     {
         var validated = EventIngestionTestHelper.ValidateValid(
             EventIngestionTestHelper.Publish(idProperty: "\"id\":\"Entity-Aa\""));
@@ -20,7 +20,7 @@ public sealed class EventValidatorTests
     [InlineData("\"entityId\":\"entity-1\"")]
     [InlineData("\"Id\":\"entity-1\"")]
     [InlineData("\"ID\":\"entity-1\"")]
-    public void EntityIdAliasesAreIgnoredAndWireIdRemainsRequired(string idProperty)
+    public void AC010EntityIdAliasesAreIgnoredAndWireIdRemainsRequired(string idProperty)
     {
         var result = EventIngestionTestHelper.ValidateSingle(
             EventIngestionTestHelper.Publish(idProperty: idProperty));
@@ -53,7 +53,7 @@ public sealed class EventValidatorTests
     }
 
     [Fact]
-    public void UnknownEnvelopePropertiesAreIgnored()
+    public void AC011UnknownEnvelopePropertiesAreIgnored()
     {
         var baseline = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
         var withUnknown = EventIngestionTestHelper.ValidateValid(
@@ -77,7 +77,7 @@ public sealed class EventValidatorTests
     [InlineData("  publish\t", "publish")]
     [InlineData("\r\nUnPublish  ", "unpublish")]
     [InlineData(" DELETE ", "delete")]
-    public void DocumentedEventTypeVariantsNormalizeToCanonicalLowercase(
+    public void AC009DocumentedEventTypeVariantsNormalizeToCanonicalLowercase(
         string suppliedType,
         string expectedCanonicalType)
     {
@@ -117,7 +117,7 @@ public sealed class EventValidatorTests
     [InlineData("42")]
     [InlineData("\"value\"")]
     [InlineData("[]")]
-    public void NonObjectItemsAreIndividuallyInvalid(string itemJson)
+    public void AC010NonObjectItemsAreIndividuallyInvalid(string itemJson)
     {
         var result = EventIngestionTestHelper.ValidateSingle(itemJson);
 
@@ -272,7 +272,7 @@ public sealed class EventValidatorTests
     [Theory]
     [InlineData("publish")]
     [InlineData("unpublish")]
-    public void VersionedEventsRequireVersionAndPayload(string eventType)
+    public void AC013VersionedEventsRequireVersionAndPayload(string eventType)
     {
         var missingVersion = $"{{\"type\":\"{eventType}\",\"id\":\"entity-1\",\"timestamp\":\"{EventIngestionTestHelper.Timestamp}\",\"payload\":{{}}}}";
         var missingPayload = $"{{\"type\":\"{eventType}\",\"id\":\"entity-1\",\"version\":1,\"timestamp\":\"{EventIngestionTestHelper.Timestamp}\"}}";
@@ -288,7 +288,7 @@ public sealed class EventValidatorTests
     [Theory]
     [InlineData("\"version\":1", "VERSION_NOT_ALLOWED")]
     [InlineData("\"payload\":{}", "PAYLOAD_NOT_ALLOWED")]
-    public void DeleteRejectsVersionAndPayload(string extraProperty, string expectedCode)
+    public void AC013DeleteRejectsVersionAndPayload(string extraProperty, string expectedCode)
     {
         var result = EventIngestionTestHelper.ValidateSingle(
             EventIngestionTestHelper.Delete(extraProperty: extraProperty));
@@ -297,7 +297,7 @@ public sealed class EventValidatorTests
     }
 
     [Fact]
-    public void ExactPayloadSizeLimitIsAcceptedAndOneByteMoreIsRejected()
+    public void AC054ExactPayloadSizeLimitIsAcceptedAndOneByteMoreIsRejected()
     {
         var acceptedPayload = CreatePayload(CmsEventIngestionLimits.AbsoluteMaximumPayloadSizeBytes);
         var rejectedPayload = CreatePayload(CmsEventIngestionLimits.AbsoluteMaximumPayloadSizeBytes + 1);
@@ -306,6 +306,24 @@ public sealed class EventValidatorTests
             EventIngestionTestHelper.Publish(payloadProperty: $"\"payload\":{acceptedPayload}"));
         var rejected = EventIngestionTestHelper.ValidateSingle(
             EventIngestionTestHelper.Publish(payloadProperty: $"\"payload\":{rejectedPayload}"));
+
+        Assert.True(accepted.IsValid, accepted.Failure?.Code);
+        Assert.Equal(EventValidationCodes.PayloadTooLarge, rejected.Failure?.Code);
+    }
+
+    [Fact]
+    public void PayloadLimitCountsUtf8BytesRatherThanCharacters()
+    {
+        var limits = new CmsEventIngestionLimits(maximumPayloadSizeBytes: 18);
+        const string acceptedPayload = "{\"v\":\"ééééé\"}";
+        const string rejectedPayload = "{\"v\":\"éééééé\"}";
+
+        var accepted = EventIngestionTestHelper.ValidateSingle(
+            EventIngestionTestHelper.Publish(payloadProperty: $"\"payload\":{acceptedPayload}"),
+            limits);
+        var rejected = EventIngestionTestHelper.ValidateSingle(
+            EventIngestionTestHelper.Publish(payloadProperty: $"\"payload\":{rejectedPayload}"),
+            limits);
 
         Assert.True(accepted.IsValid, accepted.Failure?.Code);
         Assert.Equal(EventValidationCodes.PayloadTooLarge, rejected.Failure?.Code);
@@ -336,6 +354,22 @@ public sealed class EventValidatorTests
                 payloadProperty: $"\"payload\":{{\"secret\":\"{sentinel}\"}}"));
 
         Assert.DoesNotContain(sentinel, validated.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InvalidResultAndFailureDiagnosticsDoNotExposeRawPayload()
+    {
+        const string sentinel = "highly-confidential-payload-sentinel";
+        var eventJson = EventIngestionTestHelper.Publish(
+            payloadProperty: $"\"payload\":{{\"secret\":\"{sentinel}\",\"secret\":\"duplicate\"}}");
+
+        var item = EventIngestionTestHelper.ParseSingle(eventJson);
+        var result = new EventValidator().Validate(item);
+
+        Assert.False(result.IsValid);
+        Assert.DoesNotContain(sentinel, item.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, result.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, result.Failure?.Message, StringComparison.Ordinal);
     }
 
     private static string CreatePayload(int desiredUtf8Size)

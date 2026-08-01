@@ -10,7 +10,7 @@ public sealed class DuplicatePropertyTests
     [InlineData("{\"type\":\"publish\",\"id\":\"one\",\"version\":1,\"timestamp\":\"2026-07-31T12:34:56Z\",\"payload\":{\"a\":1,\"a\":2}}")]
     [InlineData("{\"type\":\"publish\",\"id\":\"one\",\"version\":1,\"timestamp\":\"2026-07-31T12:34:56Z\",\"payload\":{\"outer\":{\"a\":1,\"a\":2}}}")]
     [InlineData("{\"type\":\"delete\",\"id\":\"one\",\"timestamp\":\"2026-07-31T12:34:56Z\",\"unknown\":{\"a\":1,\"a\":2}}")]
-    public void DuplicateNamesMakeOnlyTheContainingItemInvalid(string eventJson)
+    public void AC012DuplicateNamesMakeOnlyTheContainingItemInvalid(string eventJson)
     {
         var parser = new CmsEventArrayParser();
         var parseResult = parser.Parse(System.Text.Encoding.UTF8.GetBytes($"[{eventJson},{EventIngestionTestHelper.Delete()}]"));
