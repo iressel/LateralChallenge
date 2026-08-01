@@ -42,6 +42,15 @@ public sealed class CmsReadWriteBoundaryTests
         Assert.Equal(PersistenceModelConstants.CmsEntitiesTable, readEntityType.GetTableName());
         Assert.True(readEntityType.IsTableExcludedFromMigrations(readTable));
         Assert.False(writeEntityType.IsTableExcludedFromMigrations(writeTable));
+
+        var readPublicationStatus = PersistenceModelTestContext.GetRequiredProperty(
+            readEntityType,
+            nameof(CmsEntityReadModel.CmsPublicationStatus));
+        var writePublicationStatus = PersistenceModelTestContext.GetRequiredProperty(
+            writeEntityType,
+            nameof(CmsEntity.CmsPublicationStatus));
+        Assert.Equal(PersistenceModelConstants.CaseSensitiveCollation, readPublicationStatus.GetCollation());
+        Assert.Equal(writePublicationStatus.GetCollation(), readPublicationStatus.GetCollation());
     }
 
     [Fact]
