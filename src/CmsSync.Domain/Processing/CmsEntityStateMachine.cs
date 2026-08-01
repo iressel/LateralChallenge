@@ -13,16 +13,11 @@ public static class CmsEntityStateMachine
     {
         ArgumentNullException.ThrowIfNull(incomingEvent);
 
-        var inconsistentSnapshot = CheckSnapshotConsistency(
+        EnsureSnapshotConsistency(
             incomingEvent.EntityId,
             activeEntity,
             tombstone,
             sameVersionRevision);
-
-        if (inconsistentSnapshot is not null)
-        {
-            return inconsistentSnapshot;
-        }
 
         return incomingEvent switch
         {
@@ -47,47 +42,80 @@ public static class CmsEntityStateMachine
                 tombstone,
                 sameVersionRevision),
             ValidatedDeleteEvent deleteEvent => DecideDelete(deleteEvent, activeEntity, tombstone),
-            _ => ProcessingDecision.WithoutStateChange(
-                ProcessingOutcome.Invalid,
-                ProcessingCodes.UnsupportedValidatedEvent),
+            _ => throw new InvalidOperationException(
+                "The validated CMS event type is not supported by the state machine."),
         };
     }
 
-    private static ProcessingDecision? CheckSnapshotConsistency(
+    private static void EnsureSnapshotConsistency(
         string entityId,
         ActiveCmsEntitySnapshot? activeEntity,
         CmsDeletionTombstoneSnapshot? tombstone,
         CmsEntityRevisionSnapshot? sameVersionRevision)
     {
-        if ((activeEntity is not null && !Matches(entityId, activeEntity.EntityId)) ||
-            (tombstone is not null && !Matches(entityId, tombstone.EntityId)) ||
-            (sameVersionRevision is not null && !Matches(entityId, sameVersionRevision.EntityId)))
+        if (activeEntity is not null && !Matches(entityId, activeEntity.EntityId))
         {
-            return ProcessingDecision.WithoutStateChange(
-                ProcessingOutcome.Conflict,
-                ProcessingCodes.SnapshotEntityMismatch);
+            throw new InvalidOperationException(
+                "The active entity snapshot does not match the incoming entity.");
         }
 
-        if (activeEntity is not null &&
-            tombstone is not null &&
-            (activeEntity.Generation <= tombstone.LastDeletedGeneration ||
-             activeEntity.CurrentVersionOccurredAtUtc <= tombstone.DeletedAtUtc ||
-             activeEntity.EntityEventHighWatermarkUtc <= tombstone.DeletedAtUtc))
+        if (tombstone is not null && !Matches(entityId, tombstone.EntityId))
         {
-            return ProcessingDecision.WithoutStateChange(
-                ProcessingOutcome.Conflict,
-                ProcessingCodes.SnapshotGenerationConflict);
+            throw new InvalidOperationException(
+                "The deletion tombstone snapshot does not match the incoming entity.");
+        }
+
+        if (sameVersionRevision is not null && !Matches(entityId, sameVersionRevision.EntityId))
+        {
+            throw new InvalidOperationException(
+                "The revision snapshot does not match the incoming entity.");
+        }
+
+        if (activeEntity is null)
+        {
+            if (sameVersionRevision is not null)
+            {
+                throw new InvalidOperationException(
+                    "A revision snapshot requires an active entity snapshot.");
+            }
+
+            return;
+        }
+
+        if (tombstone is null)
+        {
+            if (activeEntity.Generation.Value > 1)
+            {
+                throw new InvalidOperationException(
+                    "An active entity above generation 1 requires a retained tombstone.");
+            }
+        }
+        else
+        {
+            if (!tombstone.LastDeletedGeneration.TryGetNext(out var expectedGeneration) ||
+                activeEntity.Generation != expectedGeneration)
+            {
+                throw new InvalidOperationException(
+                    "The active entity generation is inconsistent with the retained tombstone.");
+            }
+
+            if (activeEntity.CurrentVersionOccurredAtUtc <= tombstone.DeletedAtUtc ||
+                activeEntity.EntityEventHighWatermarkUtc <= tombstone.DeletedAtUtc)
+            {
+                throw new InvalidOperationException(
+                    "The active entity timestamps must be later than the retained tombstone.");
+            }
         }
 
         if (sameVersionRevision is not null &&
-            (activeEntity is null || sameVersionRevision.Generation != activeEntity.Generation))
+            (!Matches(activeEntity.EntityId, sameVersionRevision.EntityId) ||
+             sameVersionRevision.Generation != activeEntity.Generation ||
+             sameVersionRevision.Version != activeEntity.LatestVersion ||
+             sameVersionRevision.PayloadHash != activeEntity.PayloadHash))
         {
-            return ProcessingDecision.WithoutStateChange(
-                ProcessingOutcome.Conflict,
-                ProcessingCodes.RevisionSnapshotMismatch);
+            throw new InvalidOperationException(
+                "The revision snapshot is inconsistent with the active entity snapshot.");
         }
-
-        return null;
     }
 
     private static ProcessingDecision DecideVersioned(
@@ -243,17 +271,8 @@ public static class CmsEntityStateMachine
     {
         if (sameVersionRevision is null)
         {
-            return ProcessingDecision.WithoutStateChange(
-                ProcessingOutcome.Conflict,
-                ProcessingCodes.RevisionSnapshotMissing);
-        }
-
-        if (sameVersionRevision.Version != activeEntity.LatestVersion ||
-            sameVersionRevision.PayloadHash != activeEntity.PayloadHash)
-        {
-            return ProcessingDecision.WithoutStateChange(
-                ProcessingOutcome.Conflict,
-                ProcessingCodes.RevisionSnapshotMismatch);
+            throw new InvalidOperationException(
+                "A same-version transition requires its revision snapshot.");
         }
 
         if (payloadHash != sameVersionRevision.PayloadHash)
