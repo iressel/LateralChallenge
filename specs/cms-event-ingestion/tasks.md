@@ -34,7 +34,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 3. Pure event-processing model
 
-- [ ] **T003 — Implement the pure state model and transition engine**
+- [x] **T003 — Implement the pure state model and transition engine**
   - **Objective:** Represent validated versioned/delete events, current entity/tombstone/revision snapshots, decisions, codes, generations, publication state, CurrentVersionOccurredAtUtc, monotonic EntityEventHighWatermarkUtc, and administrative state; implement spec.md transition precedence and tables without ASP.NET Core or EF Core. Same-version ordering uses the current-version timestamp; delete uses only the entity high watermark.
   - **Expected files:** src/CmsSync.Domain/Entities/*; src/CmsSync.Domain/Events/*; src/CmsSync.Domain/Processing/CmsEntityStateMachine.cs; src/CmsSync.Domain/Processing/ProcessingDecision.cs; src/CmsSync.Domain/Processing/ProcessingCodes.cs.
   - **Requirements / criteria:** FR-009, FR-013, FR-014, FR-015, FR-016, FR-017, FR-018, FR-019, FR-020, FR-021, NFR-002, NFR-007; AC-014, AC-018–AC-034, AC-053, AC-057.
@@ -42,6 +42,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet build src/CmsSync.Domain/CmsSync.Domain.csproj --configuration Release.
   - **Dependencies:** T002.
   - **Completion criteria:** Domain compiles framework-free; every transition table row returns one closed deterministic decision; a higher Version may move CurrentVersionOccurredAtUtc backward but cannot regress EntityEventHighWatermarkUtc; delete compares only against the high watermark; CMS transitions cannot clear the local flag; delete/recreation semantics exactly match spec.md.
+  - **Completion evidence (2026-07-31):** Created the framework-independent immutable state/value types under `src/CmsSync.Domain/Entities`, validated publish/unpublish/delete events and UTC timestamp type under `Events`, and typed outcomes, stable codes, closed state operations, decisions, and the pure `CmsEntityStateMachine` under `Processing`. Direct review covered every versioned, same-version, delete, tombstone, recreation, high-watermark, and administrative-flag row in spec.md Sections 12.2–12.5, including AC-057's 10:00 high-watermark non-regression sequence. Official NuGet.org restore repaired generated assets without repository configuration changes; the Domain and full Release builds then passed with 0 warnings and 0 errors, and the existing architecture test passed 1/1. Package inspection reported no Domain packages, prohibited dependency scanning found no framework/database/JSON/logging/DI/filesystem/network references, only authorized T003 paths and this evidence changed, and T004 was not started.
   - **Suggested commit boundary:** Pure domain transition model.
 
 - [ ] **T004 — Implement event validation, canonical payload equality, and idempotency identity**
