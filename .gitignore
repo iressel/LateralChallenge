@@ -1,0 +1,78 @@
+# Build and publish output
+**/bin/
+**/obj/
+artifacts/
+publish/
+out/
+
+# Visual Studio and user-specific project state
+.vs/
+*.suo
+*.user
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code local state; allow reviewed shared configuration
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# JetBrains Rider and ReSharper user state
+.idea/
+*.sln.iml
+_ReSharper*/
+*.DotSettings.user
+
+# Test and coverage output
+TestResults/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+
+# Local environment and application settings
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.local.json
+
+# Local secrets and private key material
+secrets.json
+*.secrets.json
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Local database artifacts
+*.mdf
+*.ndf
+*.ldf
+*.bak
+*.db
+*.db-shm
+*.db-wal
+
+# Docker-local overrides and state
+.docker/
+compose.override.yml
+compose.override.yaml
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

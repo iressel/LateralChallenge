@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\CmsSync.Domain\CmsSync.Domain.csproj" />
+  </ItemGroup>
+</Project>
