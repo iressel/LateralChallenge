@@ -50,14 +50,4 @@ public static class ProcessingCodes
     public static ProcessingCode EntityDeleted { get; } = new("ENTITY_DELETED");
 
     public static ProcessingCode GenerationExhausted { get; } = new("GENERATION_EXHAUSTED");
-
-    public static ProcessingCode SnapshotEntityMismatch { get; } = new("SNAPSHOT_ENTITY_MISMATCH");
-
-    public static ProcessingCode SnapshotGenerationConflict { get; } = new("SNAPSHOT_GENERATION_CONFLICT");
-
-    public static ProcessingCode RevisionSnapshotMissing { get; } = new("REVISION_SNAPSHOT_MISSING");
-
-    public static ProcessingCode RevisionSnapshotMismatch { get; } = new("REVISION_SNAPSHOT_MISMATCH");
-
-    public static ProcessingCode UnsupportedValidatedEvent { get; } = new("UNSUPPORTED_VALIDATED_EVENT");
 }
