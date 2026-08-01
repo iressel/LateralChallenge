@@ -1,0 +1,179 @@
+using CmsSync.Application.EventIngestion;
+using Xunit;
+
+namespace CmsSync.UnitTests.EventIngestion;
+
+public sealed class EventIdentityFactoryTests
+{
+    [Fact]
+    public void ExactReplayWithoutEventIdUsesTheSameUppercaseDerivedKey()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
+        var replay = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
+
+        Assert.Equal(first.IdempotencyKey, replay.IdempotencyKey);
+        Assert.Equal(first.EventContentHash, replay.EventContentHash);
+        Assert.StartsWith("sha256:", first.IdempotencyKey, StringComparison.Ordinal);
+        Assert.Matches("^sha256:[0-9A-F]{64}$", first.IdempotencyKey);
+    }
+
+    [Fact]
+    public void EventIdUsesTheExternalNamespaceAndPreservesExactValue()
+    {
+        var validated = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"Event-AbC\""));
+
+        Assert.Equal("external:Event-AbC", validated.IdempotencyKey);
+        Assert.Equal("Event-AbC", validated.EventId);
+    }
+
+    [Fact]
+    public void EventIdIsExcludedFromEventContentHash()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"first\""));
+        var second = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"second\""));
+
+        Assert.NotEqual(first.IdempotencyKey, second.IdempotencyKey);
+        Assert.Equal(first.EventContentHash, second.EventContentHash);
+    }
+
+    [Fact]
+    public void SameEventIdWithDifferentKnownContentHasDifferentContentHashes()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(eventIdProperty: "\"eventId\":\"same\""));
+        var second = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(
+                eventIdProperty: "\"eventId\":\"same\"",
+                idProperty: "\"id\":\"entity-2\""));
+
+        Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
+        Assert.NotEqual(first.EventContentHash, second.EventContentHash);
+    }
+
+    [Fact]
+    public void EntityIdCaseIsSignificantForNormalizedContent()
+    {
+        var upper = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(idProperty: "\"id\":\"Entity\""));
+        var lower = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(idProperty: "\"id\":\"entity\""));
+
+        Assert.NotEqual(upper.EventContentHash, lower.EventContentHash);
+        Assert.NotEqual(upper.IdempotencyKey, lower.IdempotencyKey);
+    }
+
+    [Fact]
+    public void UnknownEnvelopeFieldsDoNotAffectNormalizedContent()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
+        var second = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(unknownProperty: "\"ignored\":[1,2,3]"));
+
+        Assert.Equal(first.EventContentHash, second.EventContentHash);
+        Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
+    }
+
+    [Fact]
+    public void TimestampChangesAffectNormalizedContent()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
+        var second = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(timestamp: "2026-07-31T12:34:56.1234566Z"));
+
+        Assert.NotEqual(first.EventContentHash, second.EventContentHash);
+        Assert.NotEqual(first.IdempotencyKey, second.IdempotencyKey);
+    }
+
+    [Fact]
+    public void EquivalentUtcOffsetsProduceTheSameNormalizedContent()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(timestamp: "2026-07-31T12:34:56Z"));
+        var second = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(timestamp: "2026-07-31T14:34:56+02:00"));
+
+        Assert.Equal(first.EventContentHash, second.EventContentHash);
+        Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
+    }
+
+    [Theory]
+    [InlineData("publish", "Publish")]
+    [InlineData("publish", "  PUBLISH ")]
+    [InlineData("unpublish", "unPublish")]
+    [InlineData("unpublish", " UNPUBLISH\t")]
+    [InlineData("delete", "DELETE")]
+    [InlineData("delete", " Delete ")]
+    public void AcceptedTypeVariantsHaveTheSameCanonicalHashAndDerivedKey(
+        string canonical,
+        string variant)
+    {
+        var firstJson = canonical == "delete"
+            ? EventIngestionTestHelper.Delete(canonical)
+            : EventIngestionTestHelper.Publish(canonical);
+        var secondJson = canonical == "delete"
+            ? EventIngestionTestHelper.Delete(variant)
+            : EventIngestionTestHelper.Publish(variant);
+
+        var first = EventIngestionTestHelper.ValidateValid(firstJson);
+        var second = EventIngestionTestHelper.ValidateValid(secondJson);
+
+        Assert.Equal(first.CanonicalEventType, second.CanonicalEventType);
+        Assert.Equal(first.EventContentHash, second.EventContentHash);
+        Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
+    }
+
+    [Fact]
+    public void CanonicallyEquivalentPayloadsHaveSameHashesButPreserveDifferentRawText()
+    {
+        var first = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(payloadProperty: "\"payload\":{\"a\":1,\"b\":2}"));
+        var second = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(payloadProperty: "\"payload\":{ \"b\" : 2, \"a\" : 1 }"));
+
+        Assert.NotEqual(first.RawPayload, second.RawPayload);
+        Assert.Equal(first.PayloadHash, second.PayloadHash);
+        Assert.Equal(first.EventContentHash, second.EventContentHash);
+        Assert.Equal(first.IdempotencyKey, second.IdempotencyKey);
+    }
+
+    [Fact]
+    public void NumericTokenSpellingChangesPayloadAndEventHashes()
+    {
+        var integer = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(payloadProperty: "\"payload\":{\"number\":1}"));
+        var floatingPoint = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(payloadProperty: "\"payload\":{\"number\":1.0}"));
+
+        Assert.NotEqual(integer.PayloadHash, floatingPoint.PayloadHash);
+        Assert.NotEqual(integer.EventContentHash, floatingPoint.EventContentHash);
+        Assert.NotEqual(integer.IdempotencyKey, floatingPoint.IdempotencyKey);
+    }
+
+    [Fact]
+    public void DeleteIdentityUsesExplicitUnversionedAndNoPayloadSentinels()
+    {
+        var delete = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Delete());
+        var publish = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
+
+        Assert.Null(delete.Version);
+        Assert.Null(delete.PayloadHash);
+        Assert.NotEqual(delete.EventContentHash, publish.EventContentHash);
+        Assert.NotEqual(delete.IdempotencyKey, publish.IdempotencyKey);
+    }
+
+    [Fact]
+    public void ExternalAndDerivedNamespacesCannotCollide()
+    {
+        var derived = EventIngestionTestHelper.ValidateValid(EventIngestionTestHelper.Publish());
+        var external = EventIngestionTestHelper.ValidateValid(
+            EventIngestionTestHelper.Publish(
+                eventIdProperty: $"\"eventId\":\"{derived.IdempotencyKey}\""));
+
+        Assert.StartsWith("sha256:", derived.IdempotencyKey, StringComparison.Ordinal);
+        Assert.StartsWith("external:", external.IdempotencyKey, StringComparison.Ordinal);
+        Assert.NotEqual(derived.IdempotencyKey, external.IdempotencyKey);
+    }
+}
