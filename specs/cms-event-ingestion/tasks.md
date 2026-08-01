@@ -73,7 +73,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 5. SQL Server models and configurations
 
-- [ ] **T006 — Model the four-table SQL Server schema and read/write contexts**
+- [x] **T006 — Model the four-table SQL Server schema and read/write contexts**
   - **Objective:** Implement explicit EF Core 10 SQL Server models/configurations, including separate required CurrentVersionOccurredAtUtc and EntityEventHighWatermarkUtc columns on CmsEntities, immutable revision behavior, tombstone/log isolation, case-sensitive keys, rowversion, and no-tracking read projections.
   - **Expected files:** src/CmsSync.Infrastructure/Persistence/CmsWriteDbContext.cs; src/CmsSync.Infrastructure/Persistence/CmsReadDbContext.cs; src/CmsSync.Infrastructure/Persistence/Models/*; src/CmsSync.Infrastructure/Persistence/Configurations/*; src/CmsSync.Application/Abstractions/ICmsEntityQueries.cs; read projection records.
   - **Requirements / criteria:** FR-014, FR-016, FR-018, FR-019, FR-020, FR-021, FR-028, FR-029, NFR-007, SEC-003, SEC-004; AC-025–AC-034, AC-044–AC-047, AC-057.
@@ -81,6 +81,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet build src/CmsSync.Infrastructure/CmsSync.Infrastructure.csproj --configuration Release; dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --filter "FullyQualifiedName~Model".
   - **Dependencies:** T002, T003, T004, T005.
   - **Completion criteria:** The EF model matches spec.md Section 13; CmsEntities persists both timestamps without aliasing or a shared column; one filtered-unique owner per idempotency key and self-referenced replay rows share the required processing-log table; no batch/attempt/processed-event duplicate table exists; write/read boundaries are separate; and logs cannot map raw payload/auth fields.
+  - **Completion evidence (2026-08-01):** Added the four-table SQL Server model for CmsEntities, CmsEntityRevisions, CmsDeletionTombstones, and CmsEventProcessingLogs with explicit binary case-sensitive collations, JSON/status/range checks, binary(32) hashes, datetime2(7) timestamps, rowversion tokens, immutable revision save behavior, a filtered-unique idempotency owner, and a no-cascade replay self-reference. Separate write/read contexts and an EF-free Application query boundary were added; the read model is no-tracking, migration-excluded, and rejects every SaveChanges overload. NuGet.org-only restore succeeded without configuration changes; both Release builds passed with 0 warnings and 0 errors; metadata-only model tests passed 13/13 twice; unit tests passed 239/239 with 0 failed or skipped; format and diff checks passed. Tombstones and logs contain no raw payload/authentication fields, and no migration, database, container, T007 work, or later-task work was created.
   - **Suggested commit boundary:** EF Core SQL Server model and context boundaries.
 
 ## 6. Migrations
