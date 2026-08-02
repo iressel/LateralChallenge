@@ -43,8 +43,16 @@ public sealed class CmsWriteModelTests
 
         Assert.Equal(new[] { nameof(CmsEntity.EntityId) }, PropertyNames(primaryKey.Properties));
         AssertIdentifier(entityType, nameof(CmsEntity.EntityId), PersistenceModelConstants.EntityIdentifierMaxLength);
-        AssertColumnType(entityType, nameof(CmsEntity.Generation), "bigint", nullable: false);
-        AssertColumnType(entityType, nameof(CmsEntity.LatestVersion), "bigint", nullable: false);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEntity.Generation),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: false);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEntity.LatestVersion),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: false);
         AssertColumnType(
             entityType,
             nameof(CmsEntity.Payload),
@@ -96,6 +104,14 @@ public sealed class CmsWriteModelTests
         Assert.Contains(checks, sql =>
             sql.Contains(nameof(CmsEntity.AdministrativeStateChangedAtUtc), StringComparison.Ordinal) &&
             sql.Contains(nameof(CmsEntity.AdministrativeStateChangedBy), StringComparison.Ordinal));
+        AssertCheckConstraintNames(
+            entityType,
+            PersistenceConstraintNames.CmsEntitiesGenerationPositive,
+            PersistenceConstraintNames.CmsEntitiesLatestVersionPositive,
+            PersistenceConstraintNames.CmsEntitiesPayloadJsonObject,
+            PersistenceConstraintNames.CmsEntitiesPublicationStatus,
+            PersistenceConstraintNames.CmsEntitiesEventTimestamps,
+            PersistenceConstraintNames.CmsEntitiesAdministrativeAudit);
     }
 
     [Fact]
@@ -118,8 +134,16 @@ public sealed class CmsWriteModelTests
             entityType,
             nameof(CmsEntityRevision.EntityId),
             PersistenceModelConstants.EntityIdentifierMaxLength);
-        AssertColumnType(entityType, nameof(CmsEntityRevision.Generation), "bigint", nullable: false);
-        AssertColumnType(entityType, nameof(CmsEntityRevision.Version), "bigint", nullable: false);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEntityRevision.Generation),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: false);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEntityRevision.Version),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: false);
         AssertColumnType(
             entityType,
             nameof(CmsEntityRevision.FirstObservedPayload),
@@ -136,6 +160,11 @@ public sealed class CmsWriteModelTests
         Assert.Contains("[Generation] > 0", checks, StringComparer.Ordinal);
         Assert.Contains("[Version] > 0", checks, StringComparer.Ordinal);
         Assert.Contains("ISJSON([FirstObservedPayload], OBJECT) = 1", checks, StringComparer.Ordinal);
+        AssertCheckConstraintNames(
+            entityType,
+            PersistenceConstraintNames.CmsEntityRevisionsGenerationPositive,
+            PersistenceConstraintNames.CmsEntityRevisionsVersionPositive,
+            PersistenceConstraintNames.CmsEntityRevisionsPayloadJsonObject);
         Assert.DoesNotContain(nameof(CmsEntity.CmsPublicationStatus), PropertyNames(entityType.GetProperties()));
     }
 
@@ -153,7 +182,7 @@ public sealed class CmsWriteModelTests
         AssertColumnType(
             entityType,
             nameof(CmsDeletionTombstone.LastDeletedGeneration),
-            "bigint",
+            PersistenceModelConstants.BigIntColumnType,
             nullable: false);
         AssertDateTime(entityType, nameof(CmsDeletionTombstone.DeletedAtUtc), nullable: false);
         AssertDateTime(entityType, nameof(CmsDeletionTombstone.CreatedAtUtc), nullable: false);
@@ -169,6 +198,9 @@ public sealed class CmsWriteModelTests
             "[LastDeletedGeneration] >= 0",
             CheckConstraintSql(entityType),
             StringComparer.Ordinal);
+        AssertCheckConstraintNames(
+            entityType,
+            PersistenceConstraintNames.CmsDeletionTombstonesGenerationNonNegative);
 
         AssertExactProperties(
             entityType,
@@ -202,12 +234,18 @@ public sealed class CmsWriteModelTests
                 },
                 StringComparer.Ordinal));
         Assert.True(batchIndex.IsUnique);
+        Assert.Equal(
+            PersistenceIndexNames.CmsEventProcessingLogsBatchIdSequence,
+            batchIndex.GetDatabaseName());
 
         var ownerIndex = entityType.GetIndexes().Single(index =>
             PropertyNames(index.Properties).SequenceEqual(
                 new[] { nameof(CmsEventProcessingLog.IdempotencyKey) },
                 StringComparer.Ordinal));
         Assert.True(ownerIndex.IsUnique);
+        Assert.Equal(
+            PersistenceIndexNames.CmsEventProcessingLogsIdempotencyOwner,
+            ownerIndex.GetDatabaseName());
         Assert.Equal(
             "[OwnsIdempotencyKey] = CAST(1 AS bit) AND [IdempotencyKey] IS NOT NULL",
             ownerIndex.GetFilter());
@@ -243,9 +281,21 @@ public sealed class CmsWriteModelTests
         AssertHash(entityType, nameof(CmsEventProcessingLog.PayloadHash), nullable: true);
         AssertDateTime(entityType, nameof(CmsEventProcessingLog.EventOccurredAtUtc), nullable: true);
         AssertDateTime(entityType, nameof(CmsEventProcessingLog.ProcessedAtUtc), nullable: false);
-        AssertColumnType(entityType, nameof(CmsEventProcessingLog.Version), "bigint", nullable: true);
-        AssertColumnType(entityType, nameof(CmsEventProcessingLog.Generation), "bigint", nullable: true);
-        AssertColumnType(entityType, nameof(CmsEventProcessingLog.ResultingVersion), "bigint", nullable: true);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEventProcessingLog.Version),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: true);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEventProcessingLog.Generation),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: true);
+        AssertColumnType(
+            entityType,
+            nameof(CmsEventProcessingLog.ResultingVersion),
+            PersistenceModelConstants.BigIntColumnType,
+            nullable: true);
 
         foreach (var categoricalPropertyName in new[]
                  {
@@ -264,7 +314,7 @@ public sealed class CmsWriteModelTests
             entityType.GetCheckConstraints(),
             constraint => string.Equals(
                 constraint.Name,
-                "CK_CmsEventProcessingLogs_Generation_NonNegative",
+                PersistenceConstraintNames.CmsEventProcessingLogsGenerationNonNegative,
                 StringComparison.Ordinal));
         Assert.Equal("[Generation] IS NULL OR [Generation] >= 0", generationConstraint.Sql);
         Assert.DoesNotContain(
@@ -285,6 +335,16 @@ public sealed class CmsWriteModelTests
             "[EventType] IS NULL OR [EventType] IN ('publish', 'unpublish', 'delete')",
             checks,
             StringComparer.Ordinal);
+        AssertCheckConstraintNames(
+            entityType,
+            PersistenceConstraintNames.CmsEventProcessingLogsSequenceNonNegative,
+            PersistenceConstraintNames.CmsEventProcessingLogsIdempotencyOwner,
+            PersistenceConstraintNames.CmsEventProcessingLogsReplayDoesNotOwnIdentity,
+            PersistenceConstraintNames.CmsEventProcessingLogsEventType,
+            PersistenceConstraintNames.CmsEventProcessingLogsOutcome,
+            PersistenceConstraintNames.CmsEventProcessingLogsVersionPositive,
+            PersistenceConstraintNames.CmsEventProcessingLogsGenerationNonNegative,
+            PersistenceConstraintNames.CmsEventProcessingLogsResultingVersionPositive);
 
         AssertExactProperties(
             entityType,
@@ -381,7 +441,7 @@ public sealed class CmsWriteModelTests
         var property = PersistenceModelTestContext.GetRequiredProperty(entityType, propertyName);
 
         Assert.Equal(PersistenceModelConstants.DateTimeColumnType, property.GetColumnType());
-        Assert.Equal(7, property.GetPrecision());
+        Assert.Equal(PersistenceModelConstants.DateTimePrecision, property.GetPrecision());
         Assert.Equal(nullable, property.IsNullable);
     }
 
@@ -418,6 +478,18 @@ public sealed class CmsWriteModelTests
             .Select(constraint => constraint.Sql)
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static void AssertCheckConstraintNames(
+        IEntityType entityType,
+        params string[] expectedNames)
+    {
+        var actualNames = entityType.GetCheckConstraints()
+            .Select(constraint => constraint.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(expectedNames.Order(StringComparer.Ordinal), actualNames);
     }
 
     private static string[] PropertyNames(IEnumerable<IReadOnlyProperty> properties)

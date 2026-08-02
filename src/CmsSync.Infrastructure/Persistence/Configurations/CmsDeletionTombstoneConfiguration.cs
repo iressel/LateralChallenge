@@ -11,8 +11,9 @@ internal sealed class CmsDeletionTombstoneConfiguration : IEntityTypeConfigurati
         builder.ToTable(
             PersistenceModelConstants.CmsDeletionTombstonesTable,
             tableBuilder => tableBuilder.HasCheckConstraint(
-                "CK_CmsDeletionTombstones_Generation_NonNegative",
-                "[LastDeletedGeneration] >= 0"));
+                PersistenceConstraintNames.CmsDeletionTombstonesGenerationNonNegative,
+                PersistenceConstraintSql.CreateNonNegativeCheck(
+                    nameof(CmsDeletionTombstone.LastDeletedGeneration))));
 
         builder.HasKey(tombstone => tombstone.EntityId);
 
@@ -21,22 +22,22 @@ internal sealed class CmsDeletionTombstoneConfiguration : IEntityTypeConfigurati
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsRequired();
         builder.Property(tombstone => tombstone.LastDeletedGeneration)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
         builder.Property(tombstone => tombstone.DeletedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(tombstone => tombstone.LastDeleteEventKey)
             .HasMaxLength(PersistenceModelConstants.IdempotencyKeyMaxLength)
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation);
         builder.Property(tombstone => tombstone.CreatedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(tombstone => tombstone.UpdatedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(tombstone => tombstone.RowVersion)
             .IsRowVersion()

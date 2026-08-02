@@ -6,6 +6,8 @@ public sealed class CmsEventIngestionLimits
     public const int AbsoluteMaximumBatchSize = 50;
     public const int AbsoluteMaximumPayloadSizeBytes = 256 * 1024;
     public const int AbsoluteMaximumJsonDepth = 64;
+    public const int MaximumIdentifierLength = 200;
+    public const int MaximumTimestampFractionalDigits = 7;
 
     public CmsEventIngestionLimits(
         int maximumRequestSizeBytes = AbsoluteMaximumRequestSizeBytes,
