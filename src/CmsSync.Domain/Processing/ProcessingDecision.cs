@@ -42,8 +42,10 @@ public sealed class ProcessingDecision
 
     public static ProcessingDecision Applied(
         ProcessingCode code,
-        params CmsEntityStateOperation[] operations) =>
-        new(ProcessingOutcome.Applied, code, operations);
+        params CmsEntityStateOperation[] operations)
+    {
+        return new ProcessingDecision(ProcessingOutcome.Applied, code, operations);
+    }
 
     public static ProcessingDecision WithoutStateChange(ProcessingOutcome outcome, ProcessingCode code)
     {

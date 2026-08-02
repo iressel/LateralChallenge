@@ -11,11 +11,15 @@ internal static class CmsStateTestData
 
     public const string DifferentPayload = "{\"name\":\"different\"}";
 
-    public static UtcTimestamp At(int hour, int minute = 0, int second = 0) =>
-        new(new DateTimeOffset(2026, 7, 31, hour, minute, second, TimeSpan.Zero));
+    public static UtcTimestamp At(int hour, int minute = 0, int second = 0)
+    {
+        return new UtcTimestamp(new DateTimeOffset(2026, 7, 31, hour, minute, second, TimeSpan.Zero));
+    }
 
-    public static PayloadHash Hash(byte value = 1) =>
-        new(Enumerable.Repeat(value, PayloadHash.Length).ToArray());
+    public static PayloadHash Hash(byte value = 1)
+    {
+        return new PayloadHash(Enumerable.Repeat(value, PayloadHash.Length).ToArray());
+    }
 
     public static ActiveCmsEntitySnapshot Active(
         long generation = 1,
@@ -48,23 +52,27 @@ internal static class CmsStateTestData
         string entityId = EntityId,
         string payload = Payload,
         PayloadHash? payloadHash = null,
-        UtcTimestamp? firstObservedAtUtc = null) =>
-        new(
+        UtcTimestamp? firstObservedAtUtc = null)
+    {
+        return new CmsEntityRevisionSnapshot(
             entityId,
             new EntityGeneration(generation),
             new EntityVersion(version),
             payload,
             payloadHash ?? Hash(),
             firstObservedAtUtc ?? At(10));
+    }
 
     public static CmsDeletionTombstoneSnapshot Tombstone(
         long lastDeletedGeneration = 1,
         UtcTimestamp? deletedAtUtc = null,
-        string entityId = EntityId) =>
-        new(
+        string entityId = EntityId)
+    {
+        return new CmsDeletionTombstoneSnapshot(
             entityId,
             new EntityGeneration(lastDeletedGeneration),
             deletedAtUtc ?? At(8));
+    }
 
     public static ValidatedCmsEvent VersionedEvent(
         CmsPublicationStatus status = CmsPublicationStatus.Published,
@@ -84,6 +92,8 @@ internal static class CmsStateTestData
 
     public static ValidatedDeleteEvent Delete(
         UtcTimestamp? occurredAtUtc = null,
-        string entityId = EntityId) =>
-        new(entityId, occurredAtUtc ?? At(11));
+        string entityId = EntityId)
+    {
+        return new ValidatedDeleteEvent(entityId, occurredAtUtc ?? At(11));
+    }
 }

@@ -513,8 +513,10 @@ public sealed class EventValidator
     private static EventValidationResult Invalid(
         ParsedCmsEventItem item,
         string code,
-        string message) =>
-        EventValidationResult.Invalid(item.Sequence, code, message);
+        string message)
+    {
+        return EventValidationResult.Invalid(item.Sequence, code, message);
+    }
 
     private sealed record KnownEventProperties(
         JsonElement? EventId,

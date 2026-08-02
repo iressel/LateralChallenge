@@ -10,7 +10,10 @@ public sealed record ProcessingCode
 
     public string Value { get; }
 
-    public override string ToString() => Value;
+    public override string ToString()
+    {
+        return Value;
+    }
 }
 
 public static class ProcessingCodes

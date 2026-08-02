@@ -29,15 +29,21 @@ internal static class PersistenceModelTestContext
         return new CmsReadDbContext(options);
     }
 
-    public static IEntityType GetRequiredEntityType<TEntity>(IModel model) =>
-        model.FindEntityType(typeof(TEntity))
-        ?? throw new InvalidOperationException($"The EF model does not contain {typeof(TEntity).Name}.");
+    public static IEntityType GetRequiredEntityType<TEntity>(IModel model)
+    {
+        return model.FindEntityType(typeof(TEntity))
+            ?? throw new InvalidOperationException($"The EF model does not contain {typeof(TEntity).Name}.");
+    }
 
-    public static IModel GetDesignTimeModel(DbContext context) =>
-        context.GetService<IDesignTimeModel>().Model;
+    public static IModel GetDesignTimeModel(DbContext context)
+    {
+        return context.GetService<IDesignTimeModel>().Model;
+    }
 
-    public static IProperty GetRequiredProperty(IEntityType entityType, string propertyName) =>
-        entityType.FindProperty(propertyName)
-        ?? throw new InvalidOperationException(
-            $"The EF model for {entityType.ClrType.Name} does not contain {propertyName}.");
+    public static IProperty GetRequiredProperty(IEntityType entityType, string propertyName)
+    {
+        return entityType.FindProperty(propertyName)
+            ?? throw new InvalidOperationException(
+                $"The EF model for {entityType.ClrType.Name} does not contain {propertyName}.");
+    }
 }

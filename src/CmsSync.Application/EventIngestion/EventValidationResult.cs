@@ -56,8 +56,10 @@ public sealed class ValidatedCmsEventData
 
     public ValidatedCmsEvent DomainEvent { get; }
 
-    public override string ToString() =>
-        $"Sequence = {Sequence}, Type = {CanonicalEventType}, EntityId = {EntityId}, HasPayload = {RawPayload is not null}";
+    public override string ToString()
+    {
+        return $"Sequence = {Sequence}, Type = {CanonicalEventType}, EntityId = {EntityId}, HasPayload = {RawPayload is not null}";
+    }
 }
 
 public sealed class EventValidationResult
@@ -80,13 +82,20 @@ public sealed class EventValidationResult
 
     public EventValidationFailure? Failure { get; }
 
-    internal static EventValidationResult Valid(ValidatedCmsEventData validatedEvent) =>
-        new(validatedEvent.Sequence, validatedEvent, null);
+    internal static EventValidationResult Valid(ValidatedCmsEventData validatedEvent)
+    {
+        return new EventValidationResult(validatedEvent.Sequence, validatedEvent, null);
+    }
 
-    internal static EventValidationResult Invalid(int sequence, string code, string message) =>
-        new(sequence, null, new EventValidationFailure(code, message));
+    internal static EventValidationResult Invalid(int sequence, string code, string message)
+    {
+        return new EventValidationResult(sequence, null, new EventValidationFailure(code, message));
+    }
 
-    public override string ToString() => IsValid
-        ? $"Sequence = {Sequence}, Valid"
-        : $"Sequence = {Sequence}, Invalid, Code = {Failure!.Code}";
+    public override string ToString()
+    {
+        return IsValid
+            ? $"Sequence = {Sequence}, Valid"
+            : $"Sequence = {Sequence}, Invalid, Code = {Failure!.Code}";
+    }
 }

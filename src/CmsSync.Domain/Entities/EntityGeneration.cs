@@ -21,7 +21,10 @@ public readonly record struct EntityGeneration : IComparable<EntityGeneration>
 
     public bool IsActive => Value > 0;
 
-    public int CompareTo(EntityGeneration other) => Value.CompareTo(other.Value);
+    public int CompareTo(EntityGeneration other)
+    {
+        return Value.CompareTo(other.Value);
+    }
 
     public bool TryGetNext(out EntityGeneration next)
     {
@@ -35,13 +38,28 @@ public readonly record struct EntityGeneration : IComparable<EntityGeneration>
         return true;
     }
 
-    public override string ToString() => Value.ToString(CultureInfo.InvariantCulture);
+    public override string ToString()
+    {
+        return Value.ToString(CultureInfo.InvariantCulture);
+    }
 
-    public static bool operator <(EntityGeneration left, EntityGeneration right) => left.Value < right.Value;
+    public static bool operator <(EntityGeneration left, EntityGeneration right)
+    {
+        return left.Value < right.Value;
+    }
 
-    public static bool operator <=(EntityGeneration left, EntityGeneration right) => left.Value <= right.Value;
+    public static bool operator <=(EntityGeneration left, EntityGeneration right)
+    {
+        return left.Value <= right.Value;
+    }
 
-    public static bool operator >(EntityGeneration left, EntityGeneration right) => left.Value > right.Value;
+    public static bool operator >(EntityGeneration left, EntityGeneration right)
+    {
+        return left.Value > right.Value;
+    }
 
-    public static bool operator >=(EntityGeneration left, EntityGeneration right) => left.Value >= right.Value;
+    public static bool operator >=(EntityGeneration left, EntityGeneration right)
+    {
+        return left.Value >= right.Value;
+    }
 }

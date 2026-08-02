@@ -104,6 +104,8 @@ public sealed class CanonicalJsonTests
         Assert.Contains(rawPayload, eventJson, StringComparison.Ordinal);
     }
 
-    private static byte[] Canonicalize(string json) =>
-        CanonicalJson.Canonicalize(Encoding.UTF8.GetBytes(json));
+    private static byte[] Canonicalize(string json)
+    {
+        return CanonicalJson.Canonicalize(Encoding.UTF8.GetBytes(json));
+    }
 }

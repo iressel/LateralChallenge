@@ -412,14 +412,18 @@ public sealed class CmsWriteModelTests
         Assert.Equal(PropertySaveBehavior.Throw, property.GetAfterSaveBehavior());
     }
 
-    private static string[] CheckConstraintSql(IEntityType entityType) =>
-        entityType.GetCheckConstraints()
+    private static string[] CheckConstraintSql(IEntityType entityType)
+    {
+        return entityType.GetCheckConstraints()
             .Select(constraint => constraint.Sql)
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
 
-    private static string[] PropertyNames(IEnumerable<IReadOnlyProperty> properties) =>
-        properties.Select(property => property.Name).ToArray();
+    private static string[] PropertyNames(IEnumerable<IReadOnlyProperty> properties)
+    {
+        return properties.Select(property => property.Name).ToArray();
+    }
 
     private static void AssertExactProperties(IEntityType entityType, params string[] expectedProperties)
     {

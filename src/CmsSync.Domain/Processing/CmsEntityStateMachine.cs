@@ -385,6 +385,8 @@ public static class CmsEntityStateMachine
             new UpsertDeletionTombstoneOperation(updatedTombstone));
     }
 
-    private static bool Matches(string left, string right) =>
-        string.Equals(left, right, StringComparison.Ordinal);
+    private static bool Matches(string left, string right)
+    {
+        return string.Equals(left, right, StringComparison.Ordinal);
+    }
 }

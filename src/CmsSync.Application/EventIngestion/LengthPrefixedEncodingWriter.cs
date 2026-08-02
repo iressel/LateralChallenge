@@ -50,5 +50,8 @@ internal sealed class LengthPrefixedEncodingWriter
         _buffer.Advance(value.Length);
     }
 
-    public byte[] ToArray() => _buffer.WrittenSpan.ToArray();
+    public byte[] ToArray()
+    {
+        return _buffer.WrittenSpan.ToArray();
+    }
 }

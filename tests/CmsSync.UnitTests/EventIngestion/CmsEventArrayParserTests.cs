@@ -92,6 +92,8 @@ public sealed class CmsEventArrayParserTests
         Assert.Empty(result.Items);
     }
 
-    private static CmsEventArrayParseResult Parse(string json) =>
-        new CmsEventArrayParser().Parse(Encoding.UTF8.GetBytes(json));
+    private static CmsEventArrayParseResult Parse(string json)
+    {
+        return new CmsEventArrayParser().Parse(Encoding.UTF8.GetBytes(json));
+    }
 }

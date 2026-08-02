@@ -16,10 +16,15 @@ public sealed class EventContentHash : IEquatable<EventContentHash>
         _bytes = bytes.ToArray();
     }
 
-    public bool Equals(EventContentHash? other) =>
-        other is not null && _bytes.AsSpan().SequenceEqual(other._bytes);
+    public bool Equals(EventContentHash? other)
+    {
+        return other is not null && _bytes.AsSpan().SequenceEqual(other._bytes);
+    }
 
-    public override bool Equals(object? obj) => obj is EventContentHash other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is EventContentHash other && Equals(other);
+    }
 
     public override int GetHashCode()
     {
@@ -33,11 +38,23 @@ public sealed class EventContentHash : IEquatable<EventContentHash>
         return hashCode.ToHashCode();
     }
 
-    public byte[] ToArray() => (byte[])_bytes.Clone();
+    public byte[] ToArray()
+    {
+        return (byte[])_bytes.Clone();
+    }
 
-    public override string ToString() => Convert.ToHexString(_bytes);
+    public override string ToString()
+    {
+        return Convert.ToHexString(_bytes);
+    }
 
-    public static bool operator ==(EventContentHash? left, EventContentHash? right) => Equals(left, right);
+    public static bool operator ==(EventContentHash? left, EventContentHash? right)
+    {
+        return Equals(left, right);
+    }
 
-    public static bool operator !=(EventContentHash? left, EventContentHash? right) => !Equals(left, right);
+    public static bool operator !=(EventContentHash? left, EventContentHash? right)
+    {
+        return !Equals(left, right);
+    }
 }

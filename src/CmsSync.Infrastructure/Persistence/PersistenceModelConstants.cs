@@ -24,6 +24,8 @@ public static class PersistenceModelConstants
     public const int ProcessingCodeMaxLength = 100;
     public const int HashLength = 32;
 
-    public static string CreateJsonObjectCheck(string columnName) =>
-        $"ISJSON([{columnName}], OBJECT) = 1";
+    public static string CreateJsonObjectCheck(string columnName)
+    {
+        return $"ISJSON([{columnName}], OBJECT) = 1";
+    }
 }

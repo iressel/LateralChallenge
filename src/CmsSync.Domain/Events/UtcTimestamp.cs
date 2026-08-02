@@ -16,17 +16,38 @@ public readonly record struct UtcTimestamp : IComparable<UtcTimestamp>
 
     public DateTimeOffset Value { get; }
 
-    public int CompareTo(UtcTimestamp other) => Value.CompareTo(other.Value);
+    public int CompareTo(UtcTimestamp other)
+    {
+        return Value.CompareTo(other.Value);
+    }
 
-    public override string ToString() => Value.ToString("O", CultureInfo.InvariantCulture);
+    public override string ToString()
+    {
+        return Value.ToString("O", CultureInfo.InvariantCulture);
+    }
 
-    public static UtcTimestamp Max(UtcTimestamp left, UtcTimestamp right) => left >= right ? left : right;
+    public static UtcTimestamp Max(UtcTimestamp left, UtcTimestamp right)
+    {
+        return left >= right ? left : right;
+    }
 
-    public static bool operator <(UtcTimestamp left, UtcTimestamp right) => left.Value < right.Value;
+    public static bool operator <(UtcTimestamp left, UtcTimestamp right)
+    {
+        return left.Value < right.Value;
+    }
 
-    public static bool operator <=(UtcTimestamp left, UtcTimestamp right) => left.Value <= right.Value;
+    public static bool operator <=(UtcTimestamp left, UtcTimestamp right)
+    {
+        return left.Value <= right.Value;
+    }
 
-    public static bool operator >(UtcTimestamp left, UtcTimestamp right) => left.Value > right.Value;
+    public static bool operator >(UtcTimestamp left, UtcTimestamp right)
+    {
+        return left.Value > right.Value;
+    }
 
-    public static bool operator >=(UtcTimestamp left, UtcTimestamp right) => left.Value >= right.Value;
+    public static bool operator >=(UtcTimestamp left, UtcTimestamp right)
+    {
+        return left.Value >= right.Value;
+    }
 }
