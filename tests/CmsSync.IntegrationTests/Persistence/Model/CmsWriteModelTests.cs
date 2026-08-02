@@ -260,6 +260,20 @@ public sealed class CmsWriteModelTests
             Assert.Equal(PersistenceModelConstants.CaseSensitiveCollation, categoricalProperty.GetCollation());
         }
 
+        var generationConstraint = Assert.Single(
+            entityType.GetCheckConstraints(),
+            constraint => string.Equals(
+                constraint.Name,
+                "CK_CmsEventProcessingLogs_Generation_NonNegative",
+                StringComparison.Ordinal));
+        Assert.Equal("[Generation] IS NULL OR [Generation] >= 0", generationConstraint.Sql);
+        Assert.DoesNotContain(
+            entityType.GetCheckConstraints(),
+            constraint => string.Equals(
+                constraint.Name,
+                "CK_CmsEventProcessingLogs_Generation_Positive",
+                StringComparison.Ordinal));
+
         var checks = CheckConstraintSql(entityType);
         Assert.Contains("[Sequence] >= 0", checks, StringComparer.Ordinal);
         Assert.Contains("[Generation] IS NULL OR [Generation] >= 0", checks, StringComparer.Ordinal);
