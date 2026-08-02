@@ -86,7 +86,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 6. Migrations
 
-- [ ] **T007 — Create and review the initial write-context migration**
+- [x] **T007 — Create and review the initial write-context migration**
   - **Objective:** Generate the initial SQL Server migration owned only by CmsWriteDbContext and review generated DDL for every relational invariant, including separate required CurrentVersionOccurredAtUtc and EntityEventHighWatermarkUtc datetime2(7) columns.
   - **Expected files:** src/CmsSync.Infrastructure/Persistence/Migrations/*; optional migration-bundle/deployment documentation referenced by README later.
   - **Requirements / criteria:** FR-018, FR-028, FR-029, NFR-007; AC-044, AC-057.
@@ -94,6 +94,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet ef migrations list --project src/CmsSync.Infrastructure --startup-project src/CmsSync.Api --context CmsWriteDbContext; dotnet ef migrations script --idempotent --project src/CmsSync.Infrastructure --startup-project src/CmsSync.Api --context CmsWriteDbContext.
   - **Dependencies:** T006.
   - **Completion criteria:** A clean SQL Server database migrates successfully; generated schema has both active timestamp columns plus all intended constraints/indexes/collation and no payload in tombstones/logs; CmsReadDbContext has no migration.
+  - **Completion evidence (2026-08-02):** Pinned local `dotnet-ef` 10.0.10, added the API-only private Design dependency and metadata-only `CmsWriteDbContext` factory, and generated/reviewed `20260802142305_InitialCmsPersistence` plus its designer and write-context snapshot. Metadata and normal/idempotent script inspection proved exactly `CmsEntities`, `CmsEntityRevisions`, `CmsDeletionTombstones`, and `CmsEventProcessingLogs`, including all expected keys, constraints, indexes, case-sensitive collations, `binary(32)` hashes, rowversions, and separate required `CurrentVersionOccurredAtUtc`/`EntityEventHighWatermarkUtc` `datetime2(7)` columns; no `CmsReadDbContext` migration or prohibited tombstone/log payload/authentication columns exist. NuGet.org-only restore and local tool restore succeeded; Release builds passed with 0 warnings and 0 errors; migration tests passed 15/15 twice, the Model filter passed 14/14, unit tests passed 239/239, and format/diff checks passed with 0 failed or skipped tests. No live SQL Server, LocalDB, or container was started and no migration was applied; clean-database application and live relational proof are explicitly deferred to T008, which was not started.
   - **Suggested commit boundary:** Reviewed initial SQL Server migration.
 
 ## 7. SQL Server integration infrastructure and schema verification
