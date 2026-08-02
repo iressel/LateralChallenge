@@ -91,6 +91,31 @@ public sealed class DbContextRegistrationTests
             "ConnectionStrings:ReadDatabase is required.");
     }
 
+    [Fact]
+    public async Task ExplicitMissingConfigurationOverridesLowerPriorityAmbientValues()
+    {
+        const string suppliedConnectionString =
+            "Server=configuration-only.invalid;Database=configuration-only;Integrated Security=true";
+        var ambientConfiguration = new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:WriteDatabase"] =
+                "Server=ambient-write.invalid;Database=ambient-write;Integrated Security=true",
+            ["ConnectionStrings:ReadDatabase"] =
+                "Server=ambient-read.invalid;Database=ambient-read;Integrated Security=true",
+        };
+
+        await AssertMissingConnectionStringAsync(
+            writeConnectionString: null,
+            readConnectionString: suppliedConnectionString,
+            "ConnectionStrings:WriteDatabase is required.",
+            ambientConfiguration);
+        await AssertMissingConnectionStringAsync(
+            writeConnectionString: suppliedConnectionString,
+            readConnectionString: null,
+            "ConnectionStrings:ReadDatabase is required.",
+            ambientConfiguration);
+    }
+
     private async Task<int> CountMigrationRowsAsync()
     {
         await using var connection = new SqlConnection(_fixture.WriteConnectionString);
@@ -117,11 +142,13 @@ public sealed class DbContextRegistrationTests
     private static async Task AssertMissingConnectionStringAsync(
         string? writeConnectionString,
         string? readConnectionString,
-        string expectedMessage)
+        string expectedMessage,
+        IReadOnlyDictionary<string, string?>? lowerPriorityConfiguration = null)
     {
         await using var factory = new CmsSyncWebApplicationFactory(
             writeConnectionString,
-            readConnectionString);
+            readConnectionString,
+            lowerPriorityConfiguration);
 
         var exception = Assert.Throws<InvalidOperationException>(() => _ = factory.Services);
         var messages = ReadExceptionMessages(exception);
