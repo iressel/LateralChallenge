@@ -47,6 +47,66 @@ public sealed class SchemaMetadataTests
             }.Order(StringComparer.Ordinal),
             tables);
 
+        AssertExactColumnSet(
+            columns,
+            PersistenceModelConstants.CmsEntitiesTable,
+            "EntityId",
+            "Generation",
+            "LatestVersion",
+            "Payload",
+            "PayloadHash",
+            "CmsPublicationStatus",
+            "CurrentVersionOccurredAtUtc",
+            "EntityEventHighWatermarkUtc",
+            "AdministrativeDisabled",
+            "AdministrativeStateChangedAtUtc",
+            "AdministrativeStateChangedBy",
+            "CreatedAtUtc",
+            "UpdatedAtUtc",
+            "RowVersion");
+        AssertExactColumnSet(
+            columns,
+            PersistenceModelConstants.CmsEntityRevisionsTable,
+            "EntityId",
+            "Generation",
+            "Version",
+            "FirstObservedPayload",
+            "PayloadHash",
+            "FirstObservedAtUtc");
+        AssertExactColumnSet(
+            columns,
+            PersistenceModelConstants.CmsDeletionTombstonesTable,
+            "EntityId",
+            "LastDeletedGeneration",
+            "DeletedAtUtc",
+            "LastDeleteEventKey",
+            "CreatedAtUtc",
+            "UpdatedAtUtc",
+            "RowVersion");
+        AssertExactColumnSet(
+            columns,
+            PersistenceModelConstants.CmsEventProcessingLogsTable,
+            "ProcessingLogId",
+            "BatchId",
+            "Sequence",
+            "IdempotencyKey",
+            "OwnsIdempotencyKey",
+            "ReplayOfProcessingLogId",
+            "ExternalEventId",
+            "EventContentHash",
+            "PayloadHash",
+            "EventType",
+            "EntityId",
+            "Version",
+            "EventOccurredAtUtc",
+            "Outcome",
+            "Code",
+            "Generation",
+            "ResultingVersion",
+            "ProcessedAtUtc",
+            "CorrelationId",
+            "AuthenticatedCmsSubject");
+
         AssertIdentifier(columnMap, PersistenceModelConstants.CmsEntitiesTable, nameof(CmsEntity.EntityId));
         AssertColumn(columnMap, PersistenceModelConstants.CmsEntitiesTable, nameof(CmsEntity.Generation), "bigint", false);
         AssertColumn(columnMap, PersistenceModelConstants.CmsEntitiesTable, nameof(CmsEntity.LatestVersion), "bigint", false);
@@ -87,21 +147,34 @@ public sealed class SchemaMetadataTests
         var highWatermark = columnMap[(PersistenceModelConstants.CmsEntitiesTable, nameof(CmsEntity.EntityEventHighWatermarkUtc))];
         Assert.NotEqual(currentTimestamp.ColumnName, highWatermark.ColumnName);
 
-        var prohibitedFragments = new[]
-        {
+        AssertDoesNotContainColumns(
+            columns,
+            PersistenceModelConstants.CmsDeletionTombstonesTable,
+            "Payload",
+            "RawPayload",
+            "PayloadHash",
+            "EventContentHash",
+            "RequestBody",
+            "Authorization",
+            "AuthorizationHeader",
+            "Password",
+            "Credential",
+            "ConnectionString",
+            "ExceptionStackTrace",
+            "DiagnosticText");
+        AssertDoesNotContainColumns(
+            columns,
+            PersistenceModelConstants.CmsEventProcessingLogsTable,
+            "Payload",
             "RawPayload",
             "RequestBody",
             "Authorization",
+            "AuthorizationHeader",
             "Password",
             "Credential",
-            "StackTrace",
-        };
-        Assert.DoesNotContain(
-            columns.Where(column =>
-                column.TableName == PersistenceModelConstants.CmsDeletionTombstonesTable ||
-                column.TableName == PersistenceModelConstants.CmsEventProcessingLogsTable),
-            column => prohibitedFragments.Any(fragment =>
-                column.ColumnName.Contains(fragment, StringComparison.OrdinalIgnoreCase)));
+            "ConnectionString",
+            "ExceptionStackTrace",
+            "DiagnosticText");
     }
 
     [Fact]
@@ -239,6 +312,52 @@ public sealed class SchemaMetadataTests
         AssertDateTime(columns, table, nameof(CmsEventProcessingLog.ProcessedAtUtc), false);
         AssertIdentifier(columns, table, nameof(CmsEventProcessingLog.CorrelationId));
         AssertIdentifier(columns, table, nameof(CmsEventProcessingLog.AuthenticatedCmsSubject));
+    }
+
+    private static void AssertExactColumnSet(
+        IEnumerable<(
+            string TableName,
+            string ColumnName,
+            string TypeName,
+            short MaximumLength,
+            byte Precision,
+            byte Scale,
+            bool IsNullable,
+            bool IsIdentity,
+            string? Collation)> columns,
+        string tableName,
+        params string[] expectedColumnNames)
+    {
+        var actualColumnNames = columns
+            .Where(column => string.Equals(column.TableName, tableName, StringComparison.Ordinal))
+            .Select(column => column.ColumnName)
+            .Order(StringComparer.Ordinal);
+
+        Assert.Equal(expectedColumnNames.Order(StringComparer.Ordinal), actualColumnNames);
+    }
+
+    private static void AssertDoesNotContainColumns(
+        IEnumerable<(
+            string TableName,
+            string ColumnName,
+            string TypeName,
+            short MaximumLength,
+            byte Precision,
+            byte Scale,
+            bool IsNullable,
+            bool IsIdentity,
+            string? Collation)> columns,
+        string tableName,
+        params string[] prohibitedColumnNames)
+    {
+        var actualColumnNames = columns
+            .Where(column => string.Equals(column.TableName, tableName, StringComparison.Ordinal))
+            .Select(column => column.ColumnName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.All(
+            prohibitedColumnNames,
+            prohibitedColumnName => Assert.DoesNotContain(prohibitedColumnName, actualColumnNames));
     }
 
     private static void AssertColumn(

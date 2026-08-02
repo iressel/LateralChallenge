@@ -8,42 +8,36 @@ public sealed class CmsSyncWebApplicationFactory : WebApplicationFactory<Program
 {
     private readonly string? _writeConnectionString;
     private readonly string? _readConnectionString;
+    private readonly IReadOnlyDictionary<string, string?>? _lowerPriorityConfiguration;
 
     public CmsSyncWebApplicationFactory(
         string? writeConnectionString,
-        string? readConnectionString)
+        string? readConnectionString,
+        IReadOnlyDictionary<string, string?>? lowerPriorityConfiguration = null)
     {
         _writeConnectionString = writeConnectionString;
         _readConnectionString = readConnectionString;
+        _lowerPriorityConfiguration = lowerPriorityConfiguration;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.ConfigureAppConfiguration((_, configuration) =>
+        var configurationBuilder = new ConfigurationBuilder();
+
+        if (_lowerPriorityConfiguration is not null)
         {
-            var settings = new Dictionary<string, string?>();
-
-            if (_writeConnectionString is not null)
-            {
-                settings["ConnectionStrings:WriteDatabase"] = _writeConnectionString;
-            }
-
-            if (_readConnectionString is not null)
-            {
-                settings["ConnectionStrings:ReadDatabase"] = _readConnectionString;
-            }
-
-            configuration.AddInMemoryCollection(settings);
-        });
-
-        if (_writeConnectionString is not null)
-        {
-            builder.UseSetting("ConnectionStrings:WriteDatabase", _writeConnectionString);
+            configurationBuilder.AddInMemoryCollection(_lowerPriorityConfiguration);
         }
 
-        if (_readConnectionString is not null)
+        var overrides = new Dictionary<string, string?>
         {
-            builder.UseSetting("ConnectionStrings:ReadDatabase", _readConnectionString);
-        }
+            ["ConnectionStrings:WriteDatabase"] = _writeConnectionString ?? string.Empty,
+            ["ConnectionStrings:ReadDatabase"] = _readConnectionString ?? string.Empty,
+        };
+
+        configurationBuilder.AddInMemoryCollection(overrides);
+
+        var configuration = configurationBuilder.Build();
+        builder.UseConfiguration(configuration);
     }
 }
