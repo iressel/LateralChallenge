@@ -1,6 +1,9 @@
+using CmsSync.Application.EventIngestion;
 using CmsSync.Infrastructure.Persistence;
+using CmsSync.Infrastructure.Persistence.EventProcessing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace CmsSync.Infrastructure;
 
@@ -28,9 +31,20 @@ public static class DependencyInjection
         }
 
         services.AddDbContext<CmsWriteDbContext>(options =>
-            options.UseSqlServer(writeConnectionString));
+            options.UseSqlServer(
+                writeConnectionString,
+                sqlServerOptions => sqlServerOptions.EnableRetryOnFailure(
+                    maxRetryCount: 3,
+                    maxRetryDelay: TimeSpan.FromSeconds(2),
+                    errorNumbersToAdd: [1205])));
         services.AddDbContext<CmsReadDbContext>(options =>
             options.UseSqlServer(readConnectionString));
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<EventValidator>();
+        services.TryAddSingleton<SqlServerEntityApplicationLock>();
+        services.AddScoped<IEventTransactionExecutor, SqlServerEventTransactionExecutor>();
+        services.AddScoped<CmsEventBatchService>();
 
         return services;
     }

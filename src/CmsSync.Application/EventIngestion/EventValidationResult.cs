@@ -5,11 +5,13 @@ public sealed class EventValidationResult
     private EventValidationResult(
         int sequence,
         ValidatedCmsEventData? validatedEvent,
-        EventValidationFailure? failure)
+        EventValidationFailure? failure,
+        InvalidCmsEventIdentityData? invalidIdentityData)
     {
         Sequence = sequence;
         ValidatedEvent = validatedEvent;
         Failure = failure;
+        InvalidIdentityData = invalidIdentityData;
     }
 
     public int Sequence { get; }
@@ -20,14 +22,24 @@ public sealed class EventValidationResult
 
     public EventValidationFailure? Failure { get; }
 
+    public InvalidCmsEventIdentityData? InvalidIdentityData { get; }
+
     internal static EventValidationResult Valid(ValidatedCmsEventData validatedEvent)
     {
-        return new EventValidationResult(validatedEvent.Sequence, validatedEvent, null);
+        return new EventValidationResult(validatedEvent.Sequence, validatedEvent, null, null);
     }
 
-    internal static EventValidationResult Invalid(int sequence, string code, string message)
+    internal static EventValidationResult Invalid(
+        int sequence,
+        string code,
+        string message,
+        InvalidCmsEventIdentityData? invalidIdentityData = null)
     {
-        return new EventValidationResult(sequence, null, new EventValidationFailure(code, message));
+        return new EventValidationResult(
+            sequence,
+            null,
+            new EventValidationFailure(code, message),
+            invalidIdentityData);
     }
 
     public override string ToString()

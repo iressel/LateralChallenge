@@ -174,10 +174,19 @@ public sealed class EventValidator
 
         if (Encoding.UTF8.GetByteCount(rawPayload) > _limits.MaximumPayloadSizeBytes)
         {
+            var invalidIdentityData = CreateInvalidPayloadIdentityData(
+                eventId,
+                eventType,
+                entityId,
+                version,
+                occurredAtUtc,
+                payloadElement);
+
             return Invalid(
                 item,
                 EventValidationCodes.PayloadTooLarge,
-                "Payload exceeds the configured byte limit.");
+                "Payload exceeds the configured byte limit.",
+                invalidIdentityData);
         }
 
         var canonicalPayload = CanonicalJson.Canonicalize(payloadElement);
@@ -531,9 +540,37 @@ public sealed class EventValidator
     private static EventValidationResult Invalid(
         ParsedCmsEventItem item,
         string code,
-        string message)
+        string message,
+        InvalidCmsEventIdentityData? invalidIdentityData = null)
     {
-        return EventValidationResult.Invalid(item.Sequence, code, message);
+        return EventValidationResult.Invalid(item.Sequence, code, message, invalidIdentityData);
     }
 
+    private static InvalidCmsEventIdentityData CreateInvalidPayloadIdentityData(
+        string? eventId,
+        CmsEventType eventType,
+        string entityId,
+        EntityVersion version,
+        UtcTimestamp occurredAtUtc,
+        JsonElement payloadElement)
+    {
+        var canonicalPayload = CanonicalJson.Canonicalize(payloadElement);
+        var payloadHash = new PayloadHash(SHA256.HashData(canonicalPayload));
+        var identity = EventIdentityFactory.Create(
+            eventType,
+            entityId,
+            version,
+            occurredAtUtc,
+            canonicalPayload,
+            eventId);
+
+        return new InvalidCmsEventIdentityData(
+            eventId,
+            eventType,
+            entityId,
+            version,
+            occurredAtUtc,
+            payloadHash,
+            identity);
+    }
 }
