@@ -85,7 +85,13 @@ public sealed class EventValidator
 
     private static EventValidationResult ValidateDelete(
         ParsedCmsEventItem item,
-        KnownEventProperties properties,
+        (
+            JsonElement? EventId,
+            JsonElement? Type,
+            JsonElement? EntityId,
+            JsonElement? Version,
+            JsonElement? Timestamp,
+            JsonElement? Payload) properties,
         string? eventId,
         string entityId,
         UtcTimestamp occurredAtUtc)
@@ -131,7 +137,13 @@ public sealed class EventValidator
 
     private EventValidationResult ValidateVersioned(
         ParsedCmsEventItem item,
-        KnownEventProperties properties,
+        (
+            JsonElement? EventId,
+            JsonElement? Type,
+            JsonElement? EntityId,
+            JsonElement? Version,
+            JsonElement? Timestamp,
+            JsonElement? Payload) properties,
         string? eventId,
         CmsEventType eventType,
         string entityId,
@@ -232,7 +244,13 @@ public sealed class EventValidator
         }
     }
 
-    private static KnownEventProperties ReadKnownProperties(JsonElement root)
+    private static (
+        JsonElement? EventId,
+        JsonElement? Type,
+        JsonElement? EntityId,
+        JsonElement? Version,
+        JsonElement? Timestamp,
+        JsonElement? Payload) ReadKnownProperties(JsonElement root)
     {
         JsonElement? eventId = null;
         JsonElement? type = null;
@@ -266,7 +284,7 @@ public sealed class EventValidator
             }
         }
 
-        return new KnownEventProperties(eventId, type, entityId, version, timestamp, payload);
+        return (eventId, type, entityId, version, timestamp, payload);
     }
 
     private static bool TryReadEventType(
@@ -518,11 +536,4 @@ public sealed class EventValidator
         return EventValidationResult.Invalid(item.Sequence, code, message);
     }
 
-    private sealed record KnownEventProperties(
-        JsonElement? EventId,
-        JsonElement? Type,
-        JsonElement? EntityId,
-        JsonElement? Version,
-        JsonElement? Timestamp,
-        JsonElement? Payload);
 }
