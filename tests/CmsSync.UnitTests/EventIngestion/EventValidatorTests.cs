@@ -312,6 +312,38 @@ public sealed class EventValidatorTests
     }
 
     [Fact]
+    public void OversizedObjectPayloadRetainsOnlyTheExistingCanonicalIdentityMetadata()
+    {
+        var limits = new CmsEventIngestionLimits(maximumPayloadSizeBytes: 18);
+        const string oversizedPayload = "{\"v\":\"Ã©Ã©Ã©Ã©Ã©Ã©\"}";
+        var eventJson = EventIngestionTestHelper.Publish(
+            eventIdProperty: "\"eventId\":\"invalid-replay-owner\"",
+            payloadProperty: $"\"payload\":{oversizedPayload}");
+
+        var first = EventIngestionTestHelper.ValidateSingle(eventJson, limits);
+        var replay = EventIngestionTestHelper.ValidateSingle(eventJson, limits);
+
+        Assert.Equal(EventValidationCodes.PayloadTooLarge, first.Failure?.Code);
+        Assert.Null(first.ValidatedEvent);
+        var identity = Assert.IsType<InvalidCmsEventIdentityData>(first.InvalidIdentityData);
+        var replayIdentity = Assert.IsType<InvalidCmsEventIdentityData>(replay.InvalidIdentityData);
+        Assert.Equal("external:invalid-replay-owner", identity.IdempotencyKey);
+        Assert.Equal(identity.EventContentHash, replayIdentity.EventContentHash);
+        Assert.Equal(identity.PayloadHash, replayIdentity.PayloadHash);
+        Assert.DoesNotContain(oversizedPayload, first.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InvalidEventWithoutCompleteNormalizedIdentityMaterialOwnsNoIdentity()
+    {
+        var invalidTimestamp = EventIngestionTestHelper.ValidateSingle(
+            EventIngestionTestHelper.Publish(timestamp: "not-a-timestamp"));
+
+        Assert.Equal(EventValidationCodes.TimestampInvalid, invalidTimestamp.Failure?.Code);
+        Assert.Null(invalidTimestamp.InvalidIdentityData);
+    }
+
+    [Fact]
     public void PayloadLimitCountsUtf8BytesRatherThanCharacters()
     {
         var limits = new CmsEventIngestionLimits(maximumPayloadSizeBytes: 18);
