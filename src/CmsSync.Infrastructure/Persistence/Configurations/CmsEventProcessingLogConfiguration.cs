@@ -34,7 +34,7 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
                     "CK_CmsEventProcessingLogs_Version_Positive",
                     "[Version] IS NULL OR [Version] > 0");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_Generation_Positive",
+                    "CK_CmsEventProcessingLogs_Generation_NonNegative",
                     "[Generation] IS NULL OR [Generation] >= 0");
                 tableBuilder.HasCheckConstraint(
                     "CK_CmsEventProcessingLogs_ResultingVersion_Positive",
