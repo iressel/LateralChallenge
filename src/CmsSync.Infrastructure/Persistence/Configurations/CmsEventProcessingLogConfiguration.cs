@@ -6,9 +6,6 @@ namespace CmsSync.Infrastructure.Persistence.Configurations;
 
 internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfiguration<CmsEventProcessingLog>
 {
-    public const string IdempotencyOwnerFilter =
-        "[OwnsIdempotencyKey] = CAST(1 AS bit) AND [IdempotencyKey] IS NOT NULL";
-
     public void Configure(EntityTypeBuilder<CmsEventProcessingLog> builder)
     {
         builder.ToTable(
@@ -16,29 +13,30 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
             tableBuilder =>
             {
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_Sequence_NonNegative",
-                    "[Sequence] >= 0");
+                    PersistenceConstraintNames.CmsEventProcessingLogsSequenceNonNegative,
+                    PersistenceConstraintSql.CreateNonNegativeCheck(nameof(CmsEventProcessingLog.Sequence)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_IdempotencyOwner",
+                    PersistenceConstraintNames.CmsEventProcessingLogsIdempotencyOwner,
                     "[OwnsIdempotencyKey] = 0 OR [IdempotencyKey] IS NOT NULL");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_ReplayDoesNotOwnIdentity",
+                    PersistenceConstraintNames.CmsEventProcessingLogsReplayDoesNotOwnIdentity,
                     "[ReplayOfProcessingLogId] IS NULL OR [OwnsIdempotencyKey] = 0");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_EventType",
+                    PersistenceConstraintNames.CmsEventProcessingLogsEventType,
                     "[EventType] IS NULL OR [EventType] IN ('publish', 'unpublish', 'delete')");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_Outcome",
+                    PersistenceConstraintNames.CmsEventProcessingLogsOutcome,
                     "[Outcome] IN ('Applied', 'Duplicate', 'Equivalent', 'Stale', 'Invalid', 'Conflict')");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_Version_Positive",
-                    "[Version] IS NULL OR [Version] > 0");
+                    PersistenceConstraintNames.CmsEventProcessingLogsVersionPositive,
+                    PersistenceConstraintSql.CreateNullablePositiveCheck(nameof(CmsEventProcessingLog.Version)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_Generation_NonNegative",
-                    "[Generation] IS NULL OR [Generation] >= 0");
+                    PersistenceConstraintNames.CmsEventProcessingLogsGenerationNonNegative,
+                    PersistenceConstraintSql.CreateNullableNonNegativeCheck(nameof(CmsEventProcessingLog.Generation)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEventProcessingLogs_ResultingVersion_Positive",
-                    "[ResultingVersion] IS NULL OR [ResultingVersion] > 0");
+                    PersistenceConstraintNames.CmsEventProcessingLogsResultingVersionPositive,
+                    PersistenceConstraintSql.CreateNullablePositiveCheck(
+                        nameof(CmsEventProcessingLog.ResultingVersion)));
             });
 
         builder.HasKey(log => log.ProcessingLogId);
@@ -46,16 +44,16 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
         builder.Property(log => log.ProcessingLogId)
             .ValueGeneratedOnAdd();
         builder.Property(log => log.BatchId)
-            .HasColumnType("uniqueidentifier")
+            .HasColumnType(PersistenceModelConstants.UniqueIdentifierColumnType)
             .IsRequired();
         builder.Property(log => log.Sequence)
-            .HasColumnType("int")
+            .HasColumnType(PersistenceModelConstants.IntegerColumnType)
             .IsRequired();
         builder.Property(log => log.IdempotencyKey)
             .HasMaxLength(PersistenceModelConstants.IdempotencyKeyMaxLength)
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation);
         builder.Property(log => log.OwnsIdempotencyKey)
-            .HasColumnType("bit")
+            .HasColumnType(PersistenceModelConstants.BitColumnType)
             .IsRequired();
         builder.Property(log => log.ExternalEventId)
             .HasMaxLength(PersistenceModelConstants.ExternalEventIdentifierMaxLength)
@@ -76,10 +74,10 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
             .HasMaxLength(PersistenceModelConstants.EntityIdentifierMaxLength)
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation);
         builder.Property(log => log.Version)
-            .HasColumnType("bigint");
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType);
         builder.Property(log => log.EventOccurredAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7);
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision);
         builder.Property(log => log.Outcome)
             .HasMaxLength(PersistenceModelConstants.ProcessingOutcomeMaxLength)
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
@@ -91,12 +89,12 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
             .IsUnicode(false)
             .IsRequired();
         builder.Property(log => log.Generation)
-            .HasColumnType("bigint");
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType);
         builder.Property(log => log.ResultingVersion)
-            .HasColumnType("bigint");
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType);
         builder.Property(log => log.ProcessedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(log => log.CorrelationId)
             .HasMaxLength(PersistenceModelConstants.CorrelationIdentifierMaxLength)
@@ -109,11 +107,11 @@ internal sealed class CmsEventProcessingLogConfiguration : IEntityTypeConfigurat
 
         builder.HasIndex(log => new { log.BatchId, log.Sequence })
             .IsUnique()
-            .HasDatabaseName("UX_CmsEventProcessingLogs_BatchId_Sequence");
+            .HasDatabaseName(PersistenceIndexNames.CmsEventProcessingLogsBatchIdSequence);
         builder.HasIndex(log => log.IdempotencyKey)
             .IsUnique()
-            .HasFilter(IdempotencyOwnerFilter)
-            .HasDatabaseName("UX_CmsEventProcessingLogs_IdempotencyOwner");
+            .HasFilter(PersistenceIndexFilters.CmsEventProcessingLogsIdempotencyOwner)
+            .HasDatabaseName(PersistenceIndexNames.CmsEventProcessingLogsIdempotencyOwner);
 
         builder.HasOne<CmsEventProcessingLog>()
             .WithMany()

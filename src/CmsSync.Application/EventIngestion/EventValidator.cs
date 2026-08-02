@@ -9,8 +9,6 @@ namespace CmsSync.Application.EventIngestion;
 
 public sealed class EventValidator
 {
-    private const int MaximumIdentifierLength = 200;
-
     private static readonly string[] TimestampWithoutOffsetFormats =
     [
         "yyyy-MM-dd'T'HH:mm:ss",
@@ -263,22 +261,22 @@ public sealed class EventValidator
         {
             switch (property.Name)
             {
-                case "eventId":
+                case CmsEventPropertyNames.EventId:
                     eventId = property.Value;
                     break;
-                case "type":
+                case CmsEventPropertyNames.Type:
                     type = property.Value;
                     break;
-                case "id":
+                case CmsEventPropertyNames.EntityId:
                     entityId = property.Value;
                     break;
-                case "version":
+                case CmsEventPropertyNames.Version:
                     version = property.Value;
                     break;
-                case "timestamp":
+                case CmsEventPropertyNames.Timestamp:
                     timestamp = property.Value;
                     break;
-                case "payload":
+                case CmsEventPropertyNames.Payload:
                     payload = property.Value;
                     break;
             }
@@ -383,7 +381,7 @@ public sealed class EventValidator
         var parsed = element.GetString();
 
         if (string.IsNullOrEmpty(parsed) ||
-            parsed.Length > MaximumIdentifierLength ||
+            parsed.Length > CmsEventIngestionLimits.MaximumIdentifierLength ||
             parsed.Length != parsed.Trim().Length ||
             parsed.Any(char.IsControl))
         {
@@ -486,7 +484,9 @@ public sealed class EventValidator
             return true;
         }
 
-        if (timestampWithoutOffset.Length is < 21 or > 27 || timestampWithoutOffset[19] != '.')
+        if (timestampWithoutOffset.Length < 21 ||
+            timestampWithoutOffset.Length > 20 + CmsEventIngestionLimits.MaximumTimestampFractionalDigits ||
+            timestampWithoutOffset[19] != '.')
         {
             return false;
         }

@@ -19,10 +19,10 @@ internal sealed class CmsEntityReadModelConfiguration : IEntityTypeConfiguration
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsRequired();
         builder.Property(entity => entity.Generation)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
         builder.Property(entity => entity.LatestVersion)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
         builder.Property(entity => entity.Payload)
             .HasColumnType(PersistenceModelConstants.PayloadColumnType)
@@ -34,18 +34,18 @@ internal sealed class CmsEntityReadModelConfiguration : IEntityTypeConfiguration
             .IsRequired();
         builder.Property(entity => entity.CurrentVersionOccurredAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(entity => entity.EntityEventHighWatermarkUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(entity => entity.AdministrativeDisabled)
-            .HasColumnType("bit")
+            .HasColumnType(PersistenceModelConstants.BitColumnType)
             .IsRequired();
         builder.Property(entity => entity.AdministrativeStateChangedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7);
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision);
         builder.Property(entity => entity.AdministrativeStateChangedBy)
             .HasMaxLength(PersistenceModelConstants.AdministrativeSubjectMaxLength)
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation);

@@ -13,22 +13,22 @@ internal sealed class CmsEntityConfiguration : IEntityTypeConfiguration<CmsEntit
             tableBuilder =>
             {
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntities_Generation_Positive",
-                    "[Generation] > 0");
+                    PersistenceConstraintNames.CmsEntitiesGenerationPositive,
+                    PersistenceConstraintSql.CreatePositiveCheck(nameof(CmsEntity.Generation)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntities_LatestVersion_Positive",
-                    "[LatestVersion] > 0");
+                    PersistenceConstraintNames.CmsEntitiesLatestVersionPositive,
+                    PersistenceConstraintSql.CreatePositiveCheck(nameof(CmsEntity.LatestVersion)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntities_Payload_JsonObject",
-                    PersistenceModelConstants.CreateJsonObjectCheck(nameof(CmsEntity.Payload)));
+                    PersistenceConstraintNames.CmsEntitiesPayloadJsonObject,
+                    PersistenceConstraintSql.CreateJsonObjectCheck(nameof(CmsEntity.Payload)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntities_PublicationStatus",
+                    PersistenceConstraintNames.CmsEntitiesPublicationStatus,
                     "[CmsPublicationStatus] IN ('Published', 'Unpublished')");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntities_EventTimestamps",
+                    PersistenceConstraintNames.CmsEntitiesEventTimestamps,
                     "[EntityEventHighWatermarkUtc] >= [CurrentVersionOccurredAtUtc]");
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntities_AdministrativeAudit",
+                    PersistenceConstraintNames.CmsEntitiesAdministrativeAudit,
                     "([AdministrativeStateChangedAtUtc] IS NULL AND [AdministrativeStateChangedBy] IS NULL) OR " +
                     "([AdministrativeStateChangedAtUtc] IS NOT NULL AND [AdministrativeStateChangedBy] IS NOT NULL)");
             });
@@ -40,10 +40,10 @@ internal sealed class CmsEntityConfiguration : IEntityTypeConfiguration<CmsEntit
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsRequired();
         builder.Property(entity => entity.Generation)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
         builder.Property(entity => entity.LatestVersion)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
         builder.Property(entity => entity.Payload)
             .HasColumnType(PersistenceModelConstants.PayloadColumnType)
@@ -60,28 +60,28 @@ internal sealed class CmsEntityConfiguration : IEntityTypeConfiguration<CmsEntit
             .IsRequired();
         builder.Property(entity => entity.CurrentVersionOccurredAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(entity => entity.EntityEventHighWatermarkUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(entity => entity.AdministrativeDisabled)
-            .HasColumnType("bit")
+            .HasColumnType(PersistenceModelConstants.BitColumnType)
             .IsRequired();
         builder.Property(entity => entity.AdministrativeStateChangedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7);
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision);
         builder.Property(entity => entity.AdministrativeStateChangedBy)
             .HasMaxLength(PersistenceModelConstants.AdministrativeSubjectMaxLength)
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation);
         builder.Property(entity => entity.CreatedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(entity => entity.UpdatedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         builder.Property(entity => entity.RowVersion)
             .IsRowVersion()

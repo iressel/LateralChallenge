@@ -14,14 +14,14 @@ internal sealed class CmsEntityRevisionConfiguration : IEntityTypeConfiguration<
             tableBuilder =>
             {
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntityRevisions_Generation_Positive",
-                    "[Generation] > 0");
+                    PersistenceConstraintNames.CmsEntityRevisionsGenerationPositive,
+                    PersistenceConstraintSql.CreatePositiveCheck(nameof(CmsEntityRevision.Generation)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntityRevisions_Version_Positive",
-                    "[Version] > 0");
+                    PersistenceConstraintNames.CmsEntityRevisionsVersionPositive,
+                    PersistenceConstraintSql.CreatePositiveCheck(nameof(CmsEntityRevision.Version)));
                 tableBuilder.HasCheckConstraint(
-                    "CK_CmsEntityRevisions_Payload_JsonObject",
-                    PersistenceModelConstants.CreateJsonObjectCheck(nameof(CmsEntityRevision.FirstObservedPayload)));
+                    PersistenceConstraintNames.CmsEntityRevisionsPayloadJsonObject,
+                    PersistenceConstraintSql.CreateJsonObjectCheck(nameof(CmsEntityRevision.FirstObservedPayload)));
             });
 
         builder.HasKey(revision => new
@@ -36,10 +36,10 @@ internal sealed class CmsEntityRevisionConfiguration : IEntityTypeConfiguration<
             .UseCollation(PersistenceModelConstants.CaseSensitiveCollation)
             .IsRequired();
         builder.Property(revision => revision.Generation)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
         builder.Property(revision => revision.Version)
-            .HasColumnType("bigint")
+            .HasColumnType(PersistenceModelConstants.BigIntColumnType)
             .IsRequired();
 
         var payloadProperty = builder.Property(revision => revision.FirstObservedPayload)
@@ -56,7 +56,7 @@ internal sealed class CmsEntityRevisionConfiguration : IEntityTypeConfiguration<
 
         var timestampProperty = builder.Property(revision => revision.FirstObservedAtUtc)
             .HasColumnType(PersistenceModelConstants.DateTimeColumnType)
-            .HasPrecision(7)
+            .HasPrecision(PersistenceModelConstants.DateTimePrecision)
             .IsRequired();
         timestampProperty.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
     }
