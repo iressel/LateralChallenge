@@ -21,15 +21,33 @@ public readonly record struct EntityVersion : IComparable<EntityVersion>
 
     public bool IsValid => Value > 0;
 
-    public int CompareTo(EntityVersion other) => Value.CompareTo(other.Value);
+    public int CompareTo(EntityVersion other)
+    {
+        return Value.CompareTo(other.Value);
+    }
 
-    public override string ToString() => Value.ToString(CultureInfo.InvariantCulture);
+    public override string ToString()
+    {
+        return Value.ToString(CultureInfo.InvariantCulture);
+    }
 
-    public static bool operator <(EntityVersion left, EntityVersion right) => left.Value < right.Value;
+    public static bool operator <(EntityVersion left, EntityVersion right)
+    {
+        return left.Value < right.Value;
+    }
 
-    public static bool operator <=(EntityVersion left, EntityVersion right) => left.Value <= right.Value;
+    public static bool operator <=(EntityVersion left, EntityVersion right)
+    {
+        return left.Value <= right.Value;
+    }
 
-    public static bool operator >(EntityVersion left, EntityVersion right) => left.Value > right.Value;
+    public static bool operator >(EntityVersion left, EntityVersion right)
+    {
+        return left.Value > right.Value;
+    }
 
-    public static bool operator >=(EntityVersion left, EntityVersion right) => left.Value >= right.Value;
+    public static bool operator >=(EntityVersion left, EntityVersion right)
+    {
+        return left.Value >= right.Value;
+    }
 }

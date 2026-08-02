@@ -20,8 +20,10 @@ public sealed class ParsedCmsEventItem
 
     internal ReadOnlyMemory<byte> Utf8Json { get; }
 
-    public override string ToString() =>
-        $"Sequence = {Sequence}, Size = {Utf8Json.Length}, HasDuplicates = {HasDuplicatePropertyNames}";
+    public override string ToString()
+    {
+        return $"Sequence = {Sequence}, Size = {Utf8Json.Length}, HasDuplicates = {HasDuplicatePropertyNames}";
+    }
 }
 
 public sealed class CmsEventArrayParseResult
@@ -42,13 +44,20 @@ public sealed class CmsEventArrayParseResult
 
     public CmsEventRequestFailure? Failure { get; }
 
-    internal static CmsEventArrayParseResult Success(List<ParsedCmsEventItem> items) =>
-        new(items.ToArray(), null);
+    internal static CmsEventArrayParseResult Success(List<ParsedCmsEventItem> items)
+    {
+        return new CmsEventArrayParseResult(items.ToArray(), null);
+    }
 
-    internal static CmsEventArrayParseResult Failed(string code, string message) =>
-        new(NoItems, new CmsEventRequestFailure(code, message));
+    internal static CmsEventArrayParseResult Failed(string code, string message)
+    {
+        return new CmsEventArrayParseResult(NoItems, new CmsEventRequestFailure(code, message));
+    }
 
-    public override string ToString() => IsSuccess
-        ? $"Success, ItemCount = {Items.Count}"
-        : $"Failure, Code = {Failure!.Code}";
+    public override string ToString()
+    {
+        return IsSuccess
+            ? $"Success, ItemCount = {Items.Count}"
+            : $"Failure, Code = {Failure!.Code}";
+    }
 }

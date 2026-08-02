@@ -50,6 +50,10 @@
 
 - Use American English for code, documentation, contracts, and commit messages.
 - Write nullable-safe code, propagate `CancellationToken`, and prefer asynchronous I/O.
+- Use block bodies for ordinary methods and constructors; expression-bodied properties and accessors remain permitted.
+- Keep one top-level named production type per file, and avoid nested named types used only for organization.
+- Centralize repeated or contract-significant constants by bounded context; do not create global constants or messages dumping grounds or extract meaningless magic-number constants.
+- Evaluate Visual Studio, compiler, and analyzer suggestions for correctness and scope rather than applying them blindly.
 - Do not weaken warnings or tests.
 - Add only justified dependencies and do not use preview features.
 - Keep changes small and reviewable.

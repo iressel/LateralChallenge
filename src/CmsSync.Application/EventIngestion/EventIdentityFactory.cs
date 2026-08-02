@@ -16,8 +16,10 @@ public sealed class EventIdentity
 
     public EventContentHash ContentHash { get; }
 
-    public override string ToString() =>
-        $"Namespace = {(IdempotencyKey.StartsWith(EventIdentityFactory.ExternalPrefix, StringComparison.Ordinal) ? "external" : "sha256")}, ContentHash = {ContentHash}";
+    public override string ToString()
+    {
+        return $"Namespace = {(IdempotencyKey.StartsWith(EventIdentityFactory.ExternalPrefix, StringComparison.Ordinal) ? "external" : "sha256")}, ContentHash = {ContentHash}";
+    }
 }
 
 public sealed class EventIdentityFactory

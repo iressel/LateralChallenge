@@ -16,10 +16,15 @@ public sealed class PayloadHash : IEquatable<PayloadHash>
         _bytes = bytes.ToArray();
     }
 
-    public bool Equals(PayloadHash? other) =>
-        other is not null && _bytes.AsSpan().SequenceEqual(other._bytes);
+    public bool Equals(PayloadHash? other)
+    {
+        return other is not null && _bytes.AsSpan().SequenceEqual(other._bytes);
+    }
 
-    public override bool Equals(object? obj) => obj is PayloadHash other && Equals(other);
+    public override bool Equals(object? obj)
+    {
+        return obj is PayloadHash other && Equals(other);
+    }
 
     public override int GetHashCode()
     {
@@ -33,11 +38,23 @@ public sealed class PayloadHash : IEquatable<PayloadHash>
         return hashCode.ToHashCode();
     }
 
-    public byte[] ToArray() => (byte[])_bytes.Clone();
+    public byte[] ToArray()
+    {
+        return (byte[])_bytes.Clone();
+    }
 
-    public override string ToString() => Convert.ToHexString(_bytes);
+    public override string ToString()
+    {
+        return Convert.ToHexString(_bytes);
+    }
 
-    public static bool operator ==(PayloadHash? left, PayloadHash? right) => Equals(left, right);
+    public static bool operator ==(PayloadHash? left, PayloadHash? right)
+    {
+        return Equals(left, right);
+    }
 
-    public static bool operator !=(PayloadHash? left, PayloadHash? right) => !Equals(left, right);
+    public static bool operator !=(PayloadHash? left, PayloadHash? right)
+    {
+        return !Equals(left, right);
+    }
 }
