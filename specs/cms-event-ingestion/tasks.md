@@ -138,7 +138,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 10. Webhook API
 
-- [ ] **T011 — Expose the CMS batch webhook and exact HTTP/JSON contract**
+- [x] **T011 — Expose the CMS batch webhook and exact HTTP/JSON contract**
   - **Objective:** Implement POST /cms/events with a raw JSON array request (no `events` wrapper), request-size/media/envelope validation, case-sensitive wire `id`, trim-aware case-insensitive event-type normalization, CmsEvents policy, response `id`, 200 per-item response, summary counts, status precedence, and safe Problem Details; wire the T009 production batch/transaction flow and verify its transactional, replay, delete/recreation, and concurrency behavior through the real HTTP pipeline.
   - **Expected files:** src/CmsSync.Api/Controllers/CmsEventsController.cs or equivalent route module; src/CmsSync.Api/Contracts/CmsEvents/*; JSON/size middleware or filters; endpoint integration tests.
   - **Requirements / criteria:** FR-001–FR-021, FR-028, NFR-002–NFR-005, NFR-007, NFR-008, SEC-003; AC-001–AC-034, AC-045, AC-048, AC-051, AC-053–AC-055, AC-057.
@@ -146,6 +146,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --filter "Category=Webhook".
   - **Dependencies:** T004, T005, T009, T010.
   - **Completion criteria:** The endpoint matches spec.md Section 10.1 byte-level raw-array, property-name, event-type normalization, response, and status tests; T009 transactional/replay/delete/recreation/concurrency behavior, including AC-053 and AC-057, passes through production parsing, authentication, DI, SQL, and HTTP wiring; and the endpoint contains no business-state decisions.
+  - **Completion evidence (2026-08-02):** Added transport-only `POST /cms/events` with pre-authentication 16 MiB enforcement, isolated `CmsEvents` authorization, explicit JSON media/envelope handling, safe Problem Details, generated BatchId, request correlation and CMS subject propagation, ordered `id` results, and exact six-outcome summaries over the existing T004/T009 flow. Real HTTP/production-DI tests cover all request boundaries, parsing and casing rules, payload limits, status precedence, safe 500/503 responses, replay, per-item durability, atomic rollback, immutable revisions, delete/recreation, concurrent clients, AC-053, and complete AC-057. Release build passed with 0 warnings/errors; unit tests passed 251/251; Model/Migration 30/30; SQL Server 20/20; EventProcessing 41/41; Authentication 53/53; two independent Webhook runs passed 55/55 in 32.7958 and 33.7273 seconds; and the complete integration project passed 196/196, all with 0 failed or skipped. Format, diff, credential/payload-leak, scope, and container-cleanup checks passed; no migration/model/schema/package/project changed; no container remained; and T012 was not started.
   - **Suggested commit boundary:** CMS webhook transport contract.
 
 ## 11. Read API

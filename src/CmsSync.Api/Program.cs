@@ -1,3 +1,5 @@
+using CmsSync.Api.Webhook;
+using CmsSync.Application.EventIngestion;
 using CmsSync.Infrastructure;
 using CmsSync.Infrastructure.Authentication;
 
@@ -8,9 +10,14 @@ var readConnectionString = GetRequiredConnectionString(builder.Configuration, "R
 
 builder.Services.AddCmsPersistence(writeConnectionString, readConnectionString);
 builder.Services.AddCmsAuthentication(builder.Configuration);
+builder.Services.AddProblemDetails();
+builder.Services.AddSingleton<CmsEventIngestionLimits>();
+builder.Services.AddSingleton<CmsEventArrayParser>();
 
 var app = builder.Build();
 
+app.UseRouting();
+app.UseMiddleware<CmsWebhookRequestSizeMiddleware>();
 app.UseMiddleware<AuthenticationResponseSecurityMiddleware>();
 
 if (!app.Environment.IsDevelopment())
@@ -20,6 +27,8 @@ if (!app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapCmsEvents();
 
 app.Run();
 
