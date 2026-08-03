@@ -5,6 +5,7 @@ using Xunit;
 namespace CmsSync.IntegrationTests.Authentication;
 
 [Trait("Category", "Authentication")]
+[Trait("Category", "Security")]
 public sealed class AuthenticationLoggingSafetyTests
 {
     [Fact]

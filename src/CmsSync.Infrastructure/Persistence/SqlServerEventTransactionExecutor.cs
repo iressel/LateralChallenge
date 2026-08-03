@@ -1,14 +1,19 @@
 using System.Data;
+using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text;
 using CmsSync.Application.EventIngestion;
+using CmsSync.Application.Observability;
 using CmsSync.Domain.Entities;
 using CmsSync.Domain.Events;
 using CmsSync.Domain.Processing;
+using CmsSync.Infrastructure.Observability;
 using CmsSync.Infrastructure.Persistence.EventProcessing;
 using CmsSync.Infrastructure.Persistence.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace CmsSync.Infrastructure.Persistence;
 
@@ -16,42 +21,41 @@ public sealed class SqlServerEventTransactionExecutor : IEventTransactionExecuto
 {
     private const int MaximumTransactionAttempts = 3;
 
-    private static readonly HashSet<int> RecognizedTransientSqlErrors =
-    [
-        -2,
-        20,
-        64,
-        233,
-        1205,
-        4060,
-        10053,
-        10054,
-        10060,
-        10928,
-        10929,
-        40197,
-        40501,
-        40613,
-        49918,
-        49919,
-        49920,
-    ];
+    private static readonly Func<ILogger, Guid, string, string, string, string, IDisposable?> EventLogScope =
+        LoggerMessage.DefineScope<Guid, string, string, string, string>(
+            "BatchId {BatchId} EventType {EventType} EntityIdHash {EntityIdHash} " +
+            "CorrelationId {CorrelationId} TraceId {TraceId}");
+    private static readonly Action<ILogger, int, string, string, double, Exception?> EventCompletedLog =
+        LoggerMessage.Define<int, string, string, double>(
+            LogLevel.Information,
+            new EventId(1401, nameof(EventCompletedLog)),
+            "CMS event processing completed. Sequence {Sequence} Outcome {Outcome} Code {Code} " +
+            "ElapsedMilliseconds {ElapsedMilliseconds}");
+    private static readonly Action<ILogger, int, string, double, Exception?> EventFailedLog =
+        LoggerMessage.Define<int, string, double>(
+            LogLevel.Error,
+            new EventId(1402, nameof(EventFailedLog)),
+            "CMS event processing failed. Sequence {Sequence} ResultClass {ResultClass} " +
+            "ElapsedMilliseconds {ElapsedMilliseconds}");
 
     private readonly DbContextOptions<CmsWriteDbContext> _contextOptions;
     private readonly EventValidator _validator;
     private readonly SqlServerEntityApplicationLock _applicationLock;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<SqlServerEventTransactionExecutor>? _logger;
 
     public SqlServerEventTransactionExecutor(
         DbContextOptions<CmsWriteDbContext> contextOptions,
         EventValidator validator,
         SqlServerEntityApplicationLock applicationLock,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<SqlServerEventTransactionExecutor>? logger = null)
     {
         _contextOptions = contextOptions;
         _validator = validator;
         _applicationLock = applicationLock;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public async Task<EventTransactionResult> ExecuteAsync(
@@ -62,52 +66,76 @@ public sealed class SqlServerEventTransactionExecutor : IEventTransactionExecuto
         cancellationToken.ThrowIfCancellationRequested();
 
         var candidate = new EventProcessingCandidate(_validator.Validate(request.Item));
+        var startedTimestamp = Stopwatch.GetTimestamp();
 
-        for (var attempt = 1; attempt <= MaximumTransactionAttempts; attempt++)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            for (var attempt = 1; attempt <= MaximumTransactionAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            try
-            {
-                return await ExecuteWithStrategyAsync(request, candidate, cancellationToken);
+                try
+                {
+                    var result = await ExecuteWithStrategyAsync(request, candidate, cancellationToken);
+                    RecordCompleted(request, candidate, result, startedTimestamp);
+                    return result;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (DbUpdateConcurrencyException) when (attempt < MaximumTransactionAttempts)
+                {
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    throw new EventProcessingDependencyUnavailableException();
+                }
+                catch (EventProcessingDependencyUnavailableException) when (attempt < MaximumTransactionAttempts)
+                {
+                }
+                catch (EventProcessingDependencyUnavailableException)
+                {
+                    throw;
+                }
+                catch (RetryLimitExceededException)
+                {
+                    throw new EventProcessingDependencyUnavailableException();
+                }
+                catch (SqlException exception) when (
+                    SqlServerFailureClassifier.IsTransient(exception) && attempt < MaximumTransactionAttempts)
+                {
+                }
+                catch (SqlException exception) when (SqlServerFailureClassifier.IsTransient(exception))
+                {
+                    throw new EventProcessingDependencyUnavailableException();
+                }
+                catch (DbUpdateException exception) when (
+                    IsExpectedRetryableUniqueIndexRace(exception) && attempt < MaximumTransactionAttempts)
+                {
+                }
+                catch (DbUpdateException exception) when (IsExpectedRetryableUniqueIndexRace(exception))
+                {
+                    throw new EventProcessingDependencyUnavailableException();
+                }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (DbUpdateConcurrencyException) when (attempt < MaximumTransactionAttempts)
-            {
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                throw new EventProcessingDependencyUnavailableException();
-            }
-            catch (EventProcessingDependencyUnavailableException) when (attempt < MaximumTransactionAttempts)
-            {
-            }
-            catch (RetryLimitExceededException)
-            {
-                throw new EventProcessingDependencyUnavailableException();
-            }
-            catch (SqlException exception) when (
-                IsRecognizedTransient(exception) && attempt < MaximumTransactionAttempts)
-            {
-            }
-            catch (SqlException exception) when (IsRecognizedTransient(exception))
-            {
-                throw new EventProcessingDependencyUnavailableException();
-            }
-            catch (DbUpdateException exception) when (
-                IsExpectedRetryableUniqueIndexRace(exception) && attempt < MaximumTransactionAttempts)
-            {
-            }
-            catch (DbUpdateException exception) when (IsExpectedRetryableUniqueIndexRace(exception))
-            {
-                throw new EventProcessingDependencyUnavailableException();
-            }
+
+            throw new EventProcessingDependencyUnavailableException();
         }
-
-        throw new EventProcessingDependencyUnavailableException();
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (EventProcessingDependencyUnavailableException)
+        {
+            RecordFailed(request, candidate, startedTimestamp, "dependency_unavailable");
+            throw;
+        }
+        catch (Exception)
+        {
+            RecordFailed(request, candidate, startedTimestamp, "unexpected_failure");
+            throw;
+        }
     }
 
     private async Task<EventTransactionResult> ExecuteWithStrategyAsync(
@@ -763,10 +791,88 @@ public sealed class SqlServerEventTransactionExecutor : IEventTransactionExecuto
                    StringComparison.Ordinal);
     }
 
-    private static bool IsRecognizedTransient(SqlException exception)
+    private void RecordCompleted(
+        EventTransactionRequest request,
+        EventProcessingCandidate candidate,
+        EventTransactionResult result,
+        long startedTimestamp)
     {
-        return exception.Errors
-            .Cast<SqlError>()
-            .Any(error => RecognizedTransientSqlErrors.Contains(error.Number));
+        var elapsedMilliseconds = Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
+        CmsOperationalMetrics.RecordEvent(result.Outcome, result.Code, elapsedMilliseconds);
+
+        if (_logger is null)
+        {
+            return;
+        }
+
+        using var scope = EventLogScope(
+            _logger,
+            request.BatchId,
+            candidate.EventType ?? "unknown",
+            CreateEntityIdentifierHash(candidate.EntityId),
+            request.CorrelationId,
+            ReadTraceIdentifier());
+        EventCompletedLog(
+            _logger,
+            result.Sequence,
+            result.Outcome.ToString().ToLowerInvariant(),
+            result.Code,
+            elapsedMilliseconds,
+            null);
+    }
+
+    private void RecordFailed(
+        EventTransactionRequest request,
+        EventProcessingCandidate candidate,
+        long startedTimestamp,
+        string resultClass)
+    {
+        var elapsedMilliseconds = Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
+        CmsOperationalMetrics.RecordEventFailure(elapsedMilliseconds, resultClass);
+
+        if (_logger is null)
+        {
+            return;
+        }
+
+        using var scope = EventLogScope(
+            _logger,
+            request.BatchId,
+            candidate.EventType ?? "unknown",
+            CreateEntityIdentifierHash(candidate.EntityId),
+            request.CorrelationId,
+            ReadTraceIdentifier());
+        EventFailedLog(
+            _logger,
+            candidate.Sequence,
+            resultClass,
+            elapsedMilliseconds,
+            null);
+    }
+
+    private static string CreateEntityIdentifierHash(string? entityId)
+    {
+        if (entityId is null)
+        {
+            return "none";
+        }
+
+        var identifierBytes = Encoding.UTF8.GetBytes(entityId);
+
+        try
+        {
+            Span<byte> hash = stackalloc byte[32];
+            SHA256.HashData(identifierBytes, hash);
+            return Convert.ToHexString(hash[..8]);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(identifierBytes);
+        }
+    }
+
+    private static string ReadTraceIdentifier()
+    {
+        return Activity.Current?.TraceId.ToString() ?? "none";
     }
 }

@@ -7,6 +7,7 @@ using Xunit;
 namespace CmsSync.IntegrationTests.Authentication;
 
 [Trait("Category", "Authentication")]
+[Trait("Category", "Security")]
 public sealed class HttpsAuthenticationTests
 {
     private const string SafeConnectionString =
