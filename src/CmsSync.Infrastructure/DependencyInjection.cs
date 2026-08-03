@@ -1,6 +1,8 @@
 using CmsSync.Application.Abstractions;
 using CmsSync.Application.AdministrativeState;
 using CmsSync.Application.EventIngestion;
+using CmsSync.Application.Observability;
+using CmsSync.Infrastructure.Observability;
 using CmsSync.Infrastructure.Persistence;
 using CmsSync.Infrastructure.Persistence.EventProcessing;
 using Microsoft.EntityFrameworkCore;
@@ -32,15 +34,24 @@ public static class DependencyInjection
                 nameof(readConnectionString));
         }
 
+        var writeTelemetry = new SqlServerTelemetryCommandInterceptor(
+            CmsOperationalMetrics.WriteDatabaseOperation);
+        var readTelemetry = new SqlServerTelemetryCommandInterceptor(
+            CmsOperationalMetrics.ReadDatabaseOperation);
+
         services.AddDbContext<CmsWriteDbContext>(options =>
-            options.UseSqlServer(
-                writeConnectionString,
-                sqlServerOptions => sqlServerOptions.EnableRetryOnFailure(
-                    maxRetryCount: 3,
-                    maxRetryDelay: TimeSpan.FromSeconds(2),
-                    errorNumbersToAdd: [1205])));
+            options
+                .UseSqlServer(
+                    writeConnectionString,
+                    sqlServerOptions => sqlServerOptions.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(2),
+                        errorNumbersToAdd: [1205]))
+                .AddInterceptors(writeTelemetry));
         services.AddDbContext<CmsReadDbContext>(options =>
-            options.UseSqlServer(readConnectionString));
+            options
+                .UseSqlServer(readConnectionString)
+                .AddInterceptors(readTelemetry));
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<EventValidator>();

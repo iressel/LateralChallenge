@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
+using CmsSync.Application.Observability;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -36,12 +37,14 @@ public sealed class BasicAuthenticationHandler : AuthenticationHandler<BasicAuth
 
         if (authorizationValues.Count == 0)
         {
+            RecordAuthenticationFailure("missing");
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
         if (authorizationValues.Count != 1 ||
             !TryReadCredential(authorizationValues[0], out var username, out var password))
         {
+            RecordAuthenticationFailure("malformed");
             return Task.FromResult(AuthenticateResult.Fail(SafeFailureMessage));
         }
 
@@ -51,6 +54,11 @@ public sealed class BasicAuthenticationHandler : AuthenticationHandler<BasicAuth
             CredentialAudience.Consumer => AuthenticateConsumer(username, password),
             _ => AuthenticateResult.Fail(SafeFailureMessage),
         };
+
+        if (!result.Succeeded)
+        {
+            RecordAuthenticationFailure("invalid");
+        }
 
         return Task.FromResult(result);
     }
@@ -217,5 +225,16 @@ public sealed class BasicAuthenticationHandler : AuthenticationHandler<BasicAuth
         }
 
         return true;
+    }
+
+    private void RecordAuthenticationFailure(string resultClass)
+    {
+        var scheme = Scheme.Name switch
+        {
+            AuthenticationConstants.CmsScheme => AuthenticationConstants.CmsScheme,
+            AuthenticationConstants.ConsumerScheme => AuthenticationConstants.ConsumerScheme,
+            _ => "unknown",
+        };
+        CmsOperationalMetrics.RecordAuthenticationFailure(scheme, resultClass);
     }
 }

@@ -1,9 +1,6 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.Net.Http.Headers;
+namespace CmsSync.Api.Errors;
 
-namespace CmsSync.Api.Webhook;
-
-internal static class CmsWebhookProblemResponse
+internal static class SafeProblemDetails
 {
     public static IResult Create(
         HttpContext context,

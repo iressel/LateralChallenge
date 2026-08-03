@@ -177,7 +177,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 13. Observability and security hardening
 
-- [ ] **T014 — Add safe operational telemetry, health, error handling, and cache/TLS protections**
+- [x] **T014 — Add safe operational telemetry, health, error handling, and cache/TLS protections**
   - **Objective:** Implement structured allowlisted logs, metrics, trace/BatchId correlation, global safe Problem Details, readiness/liveness, no-store, request-log suppression/redaction, HTTPS requirements, and configuration validation.
   - **Expected files:** src/CmsSync.Api/Program.cs; observability/exception/headers components; health-check registrations; appsettings*.json placeholders; tests/CmsSync.IntegrationTests/Observability/*; Security/*; Health/*.
   - **Requirements / criteria:** FR-002, FR-005, FR-030, NFR-008, SEC-001–SEC-004; AC-003–AC-005, AC-008, AC-038, AC-047–AC-051.
@@ -185,6 +185,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --filter "Category=Observability|Category=Security|Category=Health".
   - **Dependencies:** T009–T013.
   - **Completion criteria:** Required signals exist, readiness reflects SQL dependencies, all leak tests are negative, errors expose no internals, and no sensitive/high-cardinality telemetry fields are introduced.
+  - **Completion evidence (2026-08-03):** Added allowlisted structured batch/event/request logs, platform-native bounded metrics for outcomes/codes/latency/SQL retries/deadlocks/failures/authentication failures, safe correlation and Activity trace propagation, one global Problem Details boundary, unified no-store response protection, non-Development HTTPS ordering, safe connection/credential startup validation, and anonymous minimal live/ready health endpoints with separate bounded write/read SQL probes. Real HTTP/authentication/SQL Server tests include payload/credential/header/connection/exception leak sentinels, all deterministic outcomes, a real EF-retried deadlock, SQL failure metrics, liveness without SQL, dependency-specific readiness, cancellation, existing read-context guards, and the runtime-generated SELECT-only login rejecting writes. Release build passed with 0 warnings/errors; two final Observability/Security/Health runs passed 36/36 in 23 seconds each; unit tests passed 251/251 in 135 ms; and the complete integration project passed 267/267 in 51 seconds, all with 0 failed or skipped. Full format, diff, scope, leakage, and container-cleanup checks passed; no migration/model/schema/package/project change was introduced; no container remained; and T015 was not started.
   - **Suggested commit boundary:** Operational and security hardening.
 
 ## 14. Docker and cross-platform setup

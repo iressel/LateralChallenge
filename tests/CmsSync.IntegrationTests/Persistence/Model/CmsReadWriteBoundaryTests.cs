@@ -9,6 +9,7 @@ using Xunit;
 
 namespace CmsSync.IntegrationTests.Persistence.Model;
 
+[Trait("Category", "Security")]
 public sealed class CmsReadWriteBoundaryTests
 {
     [Fact]

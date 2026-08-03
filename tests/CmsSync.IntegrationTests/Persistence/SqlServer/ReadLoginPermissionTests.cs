@@ -7,6 +7,7 @@ namespace CmsSync.IntegrationTests.Persistence.SqlServer;
 
 [Collection(SqlServerIntegrationCollectionDefinition.Name)]
 [Trait("Category", "SqlServer")]
+[Trait("Category", "Security")]
 public sealed class ReadLoginPermissionTests
 {
     private readonly SqlServerFixture _fixture;

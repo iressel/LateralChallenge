@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using CmsSync.Api.Contracts.Entities;
+using CmsSync.Api.Errors;
 using CmsSync.Application.Abstractions;
 using CmsSync.Application.AdministrativeState;
 using CmsSync.Application.EntityQueries;
@@ -53,39 +54,25 @@ public static class CmsEntitiesEndpoint
     {
         if (!TryReadPageSize(context.Request, out var pageSize))
         {
-            return CmsEntityProblemResponse.Create(
+            return SafeProblemDetails.Create(
+                context,
                 StatusCodes.Status400BadRequest,
                 "Invalid entity list request",
                 "pageSize must be an integer from 1 through 100.",
                 CmsEntityProblemCodes.InvalidPageSize);
         }
 
-        try
-        {
-            var query = new CmsEntityListQuery(
-                pageSize,
-                ReadAfterEntityId(context.Request),
-                ResolveVisibility(context));
-            var page = await entityQueries.ListAsync(query, context.RequestAborted);
-            var responseItems = page.Items.Select(CreateResponse).ToArray();
+        var query = new CmsEntityListQuery(
+            pageSize,
+            ReadAfterEntityId(context.Request),
+            ResolveVisibility(context));
+        var page = await entityQueries.ListAsync(query, context.RequestAborted);
+        var responseItems = page.Items.Select(CreateResponse).ToArray();
 
-            return Results.Ok(new CmsEntityListResponse(
-                responseItems,
-                pageSize,
-                page.NextCursor));
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return CmsEntityProblemResponse.Create(
-                StatusCodes.Status500InternalServerError,
-                "Entity query failed",
-                "The entity list could not be retrieved.",
-                CmsEntityProblemCodes.QueryFailed);
-        }
+        return Results.Ok(new CmsEntityListResponse(
+            responseItems,
+            pageSize,
+            page.NextCursor));
     }
 
     private static async Task<IResult> FindByIdAsync(
@@ -93,34 +80,20 @@ public static class CmsEntitiesEndpoint
         HttpContext context,
         ICmsEntityQueries entityQueries)
     {
-        try
-        {
-            var query = new CmsEntityDetailQuery(entityId, ResolveVisibility(context));
-            var entity = await entityQueries.FindByIdAsync(query, context.RequestAborted);
+        var query = new CmsEntityDetailQuery(entityId, ResolveVisibility(context));
+        var entity = await entityQueries.FindByIdAsync(query, context.RequestAborted);
 
-            if (entity is null)
-            {
-                return CmsEntityProblemResponse.Create(
-                    StatusCodes.Status404NotFound,
-                    "Entity not found",
-                    "The requested entity was not found.",
-                    CmsEntityProblemCodes.EntityNotFound);
-            }
+        if (entity is null)
+        {
+            return SafeProblemDetails.Create(
+                context,
+                StatusCodes.Status404NotFound,
+                "Entity not found",
+                "The requested entity was not found.",
+                CmsEntityProblemCodes.EntityNotFound);
+        }
 
-            return Results.Ok(CreateResponse(entity));
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return CmsEntityProblemResponse.Create(
-                StatusCodes.Status500InternalServerError,
-                "Entity query failed",
-                "The requested entity could not be retrieved.",
-                CmsEntityProblemCodes.QueryFailed);
-        }
+        return Results.Ok(CreateResponse(entity));
     }
 
     private static bool TryReadPageSize(HttpRequest request, out int pageSize)
@@ -157,73 +130,48 @@ public static class CmsEntitiesEndpoint
         }
         catch (JsonException)
         {
-            return CreateInvalidAdministrativeStateRequest();
+            return CreateInvalidAdministrativeStateRequest(context);
         }
 
         if (request is null)
         {
-            return CreateInvalidAdministrativeStateRequest();
+            return CreateInvalidAdministrativeStateRequest(context);
         }
 
         var administratorSubject = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         if (string.IsNullOrWhiteSpace(administratorSubject))
         {
-            return CmsEntityProblemResponse.Create(
-                StatusCodes.Status500InternalServerError,
-                "Administrative state update failed",
-                "The administrative state could not be updated.",
-                CmsEntityProblemCodes.AdministrativeStateUpdateFailed);
+            throw new InvalidOperationException("The authenticated administrator has no subject identifier.");
         }
 
-        try
-        {
-            var result = await administrativeStateService.SetAsync(
-                entityId,
-                request.Disabled,
-                administratorSubject,
-                context.RequestAborted);
+        var result = await administrativeStateService.SetAsync(
+            entityId,
+            request.Disabled,
+            administratorSubject,
+            context.RequestAborted);
 
-            if (result is null)
-            {
-                return CmsEntityProblemResponse.Create(
-                    StatusCodes.Status404NotFound,
-                    "Entity not found",
-                    "The requested entity was not found.",
-                    CmsEntityProblemCodes.EntityNotFound);
-            }
+        if (result is null)
+        {
+            return SafeProblemDetails.Create(
+                context,
+                StatusCodes.Status404NotFound,
+                "Entity not found",
+                "The requested entity was not found.",
+                CmsEntityProblemCodes.EntityNotFound);
+        }
 
-            return Results.Ok(new CmsAdministrativeStateResponse(
-                result.EntityId,
-                result.AdministrativeDisabled,
-                result.AdministrativeStateChangedAtUtc,
-                result.AdministrativeStateChangedBy));
-        }
-        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (AdministrativeStateDependencyUnavailableException)
-        {
-            return CmsEntityProblemResponse.Create(
-                StatusCodes.Status503ServiceUnavailable,
-                "Administrative state unavailable",
-                "The administrative state could not be updated at this time.",
-                CmsEntityProblemCodes.AdministrativeStateUnavailable);
-        }
-        catch (Exception)
-        {
-            return CmsEntityProblemResponse.Create(
-                StatusCodes.Status500InternalServerError,
-                "Administrative state update failed",
-                "The administrative state could not be updated.",
-                CmsEntityProblemCodes.AdministrativeStateUpdateFailed);
-        }
+        return Results.Ok(new CmsAdministrativeStateResponse(
+            result.EntityId,
+            result.AdministrativeDisabled,
+            result.AdministrativeStateChangedAtUtc,
+            result.AdministrativeStateChangedBy));
     }
 
-    private static IResult CreateInvalidAdministrativeStateRequest()
+    private static IResult CreateInvalidAdministrativeStateRequest(HttpContext context)
     {
-        return CmsEntityProblemResponse.Create(
+        return SafeProblemDetails.Create(
+            context,
             StatusCodes.Status400BadRequest,
             "Invalid administrative state request",
             "Disabled must be provided as a boolean property with exact casing.",

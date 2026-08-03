@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using CmsSync.Api.Contracts.CmsEvents;
+using CmsSync.Api.Errors;
+using CmsSync.Api.Observability;
 using CmsSync.Application.EventIngestion;
 using CmsSync.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -28,11 +31,12 @@ public static class CmsEventsEndpoint
     private static async Task<IResult> HandleAsync(
         HttpContext context,
         CmsEventArrayParser parser,
-        CmsEventBatchService batchService)
+        CmsEventBatchService batchService,
+        CmsEventBatchTelemetry telemetry)
     {
         if (!IsSupportedJsonMediaType(context.Request.ContentType))
         {
-            return CmsWebhookProblemResponse.Create(
+            return SafeProblemDetails.Create(
                 context,
                 StatusCodes.Status415UnsupportedMediaType,
                 "Unsupported CMS event media type",
@@ -40,36 +44,47 @@ public static class CmsEventsEndpoint
                 CmsWebhookProblemCodes.UnsupportedMediaType);
         }
 
+        var requestBody = context.Features.Get<CmsWebhookRequestBody>()
+            ?? throw new InvalidOperationException("The CMS webhook request body was not size-validated.");
+        var parseResult = parser.Parse(requestBody.Utf8Json);
+
+        if (!parseResult.IsSuccess)
+        {
+            var failure = parseResult.Failure
+                ?? throw new InvalidOperationException("An unsuccessful CMS event parse has no failure.");
+            var statusCode = failure.Code == CmsEventParsingCodes.RequestTooLarge
+                ? StatusCodes.Status413PayloadTooLarge
+                : StatusCodes.Status400BadRequest;
+
+            return SafeProblemDetails.Create(
+                context,
+                statusCode,
+                "Invalid CMS event request",
+                failure.Message,
+                failure.Code);
+        }
+
+        var authenticatedSubject = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? throw new InvalidOperationException("The authenticated CMS identity has no subject identifier.");
+        var batchId = Guid.NewGuid();
+        var request = new CmsEventBatchRequest(
+            batchId,
+            parseResult.Items,
+            context.TraceIdentifier,
+            authenticatedSubject);
+        var traceId = Activity.Current?.TraceId.ToString() ?? "none";
+        var startedTimestamp = Stopwatch.GetTimestamp();
+        telemetry.RecordStarted(batchId, parseResult.Items.Count, context.TraceIdentifier, traceId);
+
         try
         {
-            var requestBody = context.Features.Get<CmsWebhookRequestBody>()
-                ?? throw new InvalidOperationException("The CMS webhook request body was not size-validated.");
-            var parseResult = parser.Parse(requestBody.Utf8Json);
-
-            if (!parseResult.IsSuccess)
-            {
-                var failure = parseResult.Failure
-                    ?? throw new InvalidOperationException("An unsuccessful CMS event parse has no failure.");
-                var statusCode = failure.Code == CmsEventParsingCodes.RequestTooLarge
-                    ? StatusCodes.Status413PayloadTooLarge
-                    : StatusCodes.Status400BadRequest;
-
-                return CmsWebhookProblemResponse.Create(
-                    context,
-                    statusCode,
-                    "Invalid CMS event request",
-                    failure.Message,
-                    failure.Code);
-            }
-
-            var authenticatedSubject = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-                ?? throw new InvalidOperationException("The authenticated CMS identity has no subject identifier.");
-            var request = new CmsEventBatchRequest(
-                Guid.NewGuid(),
-                parseResult.Items,
-                context.TraceIdentifier,
-                authenticatedSubject);
             var result = await batchService.ProcessAsync(request, context.RequestAborted);
+            telemetry.RecordCompleted(
+                batchId,
+                parseResult.Items.Count,
+                Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
+                context.TraceIdentifier,
+                traceId);
             return Results.Ok(new CmsEventBatchResponse(result));
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -78,21 +93,23 @@ public static class CmsEventsEndpoint
         }
         catch (EventProcessingDependencyUnavailableException)
         {
-            return CmsWebhookProblemResponse.Create(
-                context,
-                StatusCodes.Status503ServiceUnavailable,
-                "CMS event processing is temporarily unavailable",
-                "A required dependency could not complete the CMS event batch.",
-                CmsWebhookProblemCodes.DependencyUnavailable);
+            telemetry.RecordFailed(
+                batchId,
+                parseResult.Items.Count,
+                "dependency_unavailable",
+                Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
+                context.TraceIdentifier);
+            throw;
         }
         catch (Exception)
         {
-            return CmsWebhookProblemResponse.Create(
-                context,
-                StatusCodes.Status500InternalServerError,
-                "CMS event processing failed",
-                "The CMS event batch could not be completed.",
-                CmsWebhookProblemCodes.UnexpectedProcessingFailure);
+            telemetry.RecordFailed(
+                batchId,
+                parseResult.Items.Count,
+                "unexpected_failure",
+                Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
+                context.TraceIdentifier);
+            throw;
         }
     }
 

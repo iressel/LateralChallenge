@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
+using CmsSync.Api.Errors;
 using CmsSync.Application.EventIngestion;
 using Microsoft.AspNetCore.Http;
 
@@ -120,7 +121,7 @@ public sealed class CmsWebhookRequestSizeMiddleware
 
     private static Task WriteRequestTooLargeAsync(HttpContext context)
     {
-        return CmsWebhookProblemResponse.WriteAsync(
+        return SafeProblemDetails.WriteAsync(
             context,
             StatusCodes.Status413PayloadTooLarge,
             "CMS event request is too large",
