@@ -164,7 +164,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 12. Administrative disable API
 
-- [ ] **T013 — Implement the administrator-only local override**
+- [x] **T013 — Implement the administrator-only local override**
   - **Objective:** Add idempotent PUT administrative-state behavior that changes only the local flag/audit metadata and handles unknown/deleted/concurrent entities safely.
   - **Expected files:** src/CmsSync.Application/AdministrativeState/*; src/CmsSync.Infrastructure/Persistence/CmsAdministrativeStateService.cs; src/CmsSync.Api administrative-state contract/endpoint; integration tests.
   - **Requirements / criteria:** FR-021, FR-023, FR-025, FR-027, NFR-002; AC-033, AC-034, AC-036, AC-039, AC-040, AC-053.
@@ -172,6 +172,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --filter "Category=AdministrativeState".
   - **Dependencies:** T008, T010, T012.
   - **Completion criteria:** Only AdministrativeDisabled and its local audit metadata can change; the operation never calls or models CMS propagation; all lifecycle/concurrency tests pass.
+  - **Completion evidence (2026-08-03):** Added the `AdministratorAccess`-protected local administrative-state PUT contract with exact-case boolean validation, safe Problem Details, no-store responses, authenticated-subject and `TimeProvider` audit metadata, idempotent no-update repeats, and an EF-free Application boundary. The SQL Server implementation reuses the transaction-owned per-entity application lock, serializable transactions, `RowVersion`, and bounded three-attempt reloads so administrative/CMS/delete races preserve complete serial outcomes without touching CMS-owned fields, revisions, tombstones, or processing logs. Release build passed with 0 warnings/errors; 26/26 AdministrativeState tests passed in 3 seconds; unit tests passed 251/251 in 122 ms; and the complete integration project passed 251/251 in 50 seconds, all with 0 failed or skipped. Format, diff, scope, response-safety, and container-cleanup checks passed; no migration/model/schema/package/project changed; no container remained; and T014 was not started.
   - **Suggested commit boundary:** Local administrative-state API.
 
 ## 13. Observability and security hardening

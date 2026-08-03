@@ -1,4 +1,5 @@
 using CmsSync.Application.Abstractions;
+using CmsSync.Application.AdministrativeState;
 using CmsSync.Application.EventIngestion;
 using CmsSync.Infrastructure.Persistence;
 using CmsSync.Infrastructure.Persistence.EventProcessing;
@@ -46,6 +47,7 @@ public static class DependencyInjection
         services.TryAddSingleton<SqlServerEntityApplicationLock>();
         services.AddScoped<IEventTransactionExecutor, SqlServerEventTransactionExecutor>();
         services.AddScoped<ICmsEntityQueries, CmsEntityQueries>();
+        services.AddScoped<IAdministrativeStateService, CmsAdministrativeStateService>();
         services.AddScoped<CmsEventBatchService>();
 
         return services;

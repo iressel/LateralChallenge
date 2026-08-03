@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text.Json;
 using CmsSync.Api.Contracts.Entities;
 using CmsSync.Application.Abstractions;
+using CmsSync.Application.AdministrativeState;
 using CmsSync.Application.EntityQueries;
 using CmsSync.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -11,6 +13,11 @@ namespace CmsSync.Api.Entities;
 public static class CmsEntitiesEndpoint
 {
     public const string RoutePrefix = "/api/entities";
+
+    private static readonly JsonSerializerOptions AdministrativeStateRequestJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = false,
+    };
 
     public static RouteGroupBuilder MapCmsEntities(this IEndpointRouteBuilder endpoints)
     {
@@ -27,6 +34,14 @@ public static class CmsEntitiesEndpoint
         group.MapGet("/{entityId}", FindByIdAsync)
             .Produces<CmsEntityResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapPut("/{entityId}/administrative-state", SetAdministrativeStateAsync)
+            .RequireAuthorization(AuthenticationConstants.AdministratorAccessPolicy)
+            .Produces<CmsAdministrativeStateResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
         return group;
@@ -124,6 +139,95 @@ public static class CmsEntitiesEndpoint
                    CultureInfo.InvariantCulture,
                    out pageSize) &&
                pageSize is >= CmsEntityQueryLimits.MinimumPageSize and <= CmsEntityQueryLimits.MaximumPageSize;
+    }
+
+    private static async Task<IResult> SetAdministrativeStateAsync(
+        string entityId,
+        HttpContext context,
+        IAdministrativeStateService administrativeStateService)
+    {
+        CmsAdministrativeStateRequest? request;
+
+        try
+        {
+            request = await JsonSerializer.DeserializeAsync<CmsAdministrativeStateRequest>(
+                context.Request.Body,
+                AdministrativeStateRequestJsonOptions,
+                context.RequestAborted);
+        }
+        catch (JsonException)
+        {
+            return CreateInvalidAdministrativeStateRequest();
+        }
+
+        if (request is null)
+        {
+            return CreateInvalidAdministrativeStateRequest();
+        }
+
+        var administratorSubject = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrWhiteSpace(administratorSubject))
+        {
+            return CmsEntityProblemResponse.Create(
+                StatusCodes.Status500InternalServerError,
+                "Administrative state update failed",
+                "The administrative state could not be updated.",
+                CmsEntityProblemCodes.AdministrativeStateUpdateFailed);
+        }
+
+        try
+        {
+            var result = await administrativeStateService.SetAsync(
+                entityId,
+                request.Disabled,
+                administratorSubject,
+                context.RequestAborted);
+
+            if (result is null)
+            {
+                return CmsEntityProblemResponse.Create(
+                    StatusCodes.Status404NotFound,
+                    "Entity not found",
+                    "The requested entity was not found.",
+                    CmsEntityProblemCodes.EntityNotFound);
+            }
+
+            return Results.Ok(new CmsAdministrativeStateResponse(
+                result.EntityId,
+                result.AdministrativeDisabled,
+                result.AdministrativeStateChangedAtUtc,
+                result.AdministrativeStateChangedBy));
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AdministrativeStateDependencyUnavailableException)
+        {
+            return CmsEntityProblemResponse.Create(
+                StatusCodes.Status503ServiceUnavailable,
+                "Administrative state unavailable",
+                "The administrative state could not be updated at this time.",
+                CmsEntityProblemCodes.AdministrativeStateUnavailable);
+        }
+        catch (Exception)
+        {
+            return CmsEntityProblemResponse.Create(
+                StatusCodes.Status500InternalServerError,
+                "Administrative state update failed",
+                "The administrative state could not be updated.",
+                CmsEntityProblemCodes.AdministrativeStateUpdateFailed);
+        }
+    }
+
+    private static IResult CreateInvalidAdministrativeStateRequest()
+    {
+        return CmsEntityProblemResponse.Create(
+            StatusCodes.Status400BadRequest,
+            "Invalid administrative state request",
+            "Disabled must be provided as a boolean property with exact casing.",
+            CmsEntityProblemCodes.InvalidAdministrativeStateRequest);
     }
 
     private static string? ReadAfterEntityId(HttpRequest request)
