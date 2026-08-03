@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using CmsSync.Api.Observability;
 using CmsSync.Application.Observability;
@@ -6,8 +7,10 @@ using CmsSync.Infrastructure.Persistence.Models;
 using CmsSync.IntegrationTests.Infrastructure;
 using CmsSync.IntegrationTests.TestHost;
 using CmsSync.IntegrationTests.Webhook;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace CmsSync.IntegrationTests.Observability;
@@ -18,6 +21,11 @@ public sealed class OperationalTelemetryTests
 {
     private static readonly string[] DeterministicOutcomes =
         ["applied", "duplicate", "equivalent", "stale", "invalid", "conflict"];
+    private static readonly Action<ILogger, Exception?> CorrelationScopeCaptured =
+        LoggerMessage.Define(
+            LogLevel.Information,
+            new EventId(9001, nameof(CorrelationScopeCaptured)),
+            "Correlation scope captured.");
 
     private readonly SqlServerFixture _fixture;
 
@@ -141,6 +149,45 @@ public sealed class OperationalTelemetryTests
         Assert.Equal(32, generatedCorrelation.Length);
         Assert.All(generatedCorrelation, character => Assert.True(char.IsAsciiHexDigit(character)));
         Assert.Equal(generatedCorrelation, Assert.Single(logs).CorrelationId);
+    }
+
+    [Fact]
+    public async Task CorrelationMiddlewarePreservesThePlatformRequestIdentifierAndTraceScope()
+    {
+        const string platformRequestId = "platform-request-identifier";
+        const string correlationId = "safe-correlation-identifier";
+        const string parentTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        const string parentSpanId = "00f067aa0ba902b7";
+        using var activity = new Activity("correlation-regression");
+        activity.SetParentId($"00-{parentTraceId}-{parentSpanId}-01");
+        activity.Start();
+        using var capturedLogs = new CapturedLogProvider();
+        using var loggerFactory = LoggerFactory.Create(logging =>
+        {
+            logging.ClearProviders();
+            logging.AddProvider(capturedLogs);
+        });
+        var context = new DefaultHttpContext();
+        context.TraceIdentifier = platformRequestId;
+        context.Request.Headers[CorrelationContextMiddleware.HeaderName] = correlationId;
+        var scopeProbeLogger = loggerFactory.CreateLogger("CorrelationScopeProbe");
+        var middleware = new CorrelationContextMiddleware(
+            requestContext =>
+            {
+                Assert.Equal(platformRequestId, requestContext.TraceIdentifier);
+                Assert.Equal(correlationId, CorrelationContextAccessor.GetCorrelationId(requestContext));
+                CorrelationScopeCaptured(scopeProbeLogger, null);
+                return Task.CompletedTask;
+            },
+            loggerFactory.CreateLogger<CorrelationContextMiddleware>());
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(platformRequestId, context.TraceIdentifier);
+        var capturedScope = Assert.Single(capturedLogs.Entries).Scopes;
+        Assert.Contains(capturedScope, scope => scope.Contains(correlationId, StringComparison.Ordinal));
+        Assert.Contains(capturedScope, scope => scope.Contains(parentTraceId, StringComparison.Ordinal));
+        Assert.DoesNotContain(capturedScope, scope => scope.Contains(platformRequestId, StringComparison.Ordinal));
     }
 
     [Fact]

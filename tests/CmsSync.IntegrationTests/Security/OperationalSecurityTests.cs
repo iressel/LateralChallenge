@@ -6,6 +6,7 @@ using CmsSync.Application.EventIngestion;
 using CmsSync.IntegrationTests.Infrastructure;
 using CmsSync.IntegrationTests.TestHost;
 using CmsSync.IntegrationTests.Webhook;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
@@ -64,18 +65,21 @@ public sealed class OperationalSecurityTests
             entry => entry.Message.Contains(
                 "Unhandled request failure converted to Problem Details",
                 StringComparison.Ordinal));
+        AssertRequestCompletedWithFinalStatus(capturedLogs, StatusCodes.Status500InternalServerError);
         AssertNoStore(response);
     }
 
     [Fact]
     public async Task GlobalBoundaryReturnsSafe503OnlyForRecognizedDependencyFailure()
     {
+        using var capturedLogs = new CapturedLogProvider();
         await using var host = WebhookTestHost.Create(
             _fixture,
             services => ReplaceExecutor(
                 services,
                 new ThrowingEventTransactionExecutor(
-                    static () => new EventProcessingDependencyUnavailableException())));
+                    static () => new EventProcessingDependencyUnavailableException())),
+            capturedLogs);
 
         using var response = await WebhookTestData.PostCmsAsync(
             host,
@@ -86,6 +90,7 @@ public sealed class OperationalSecurityTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Contains("DEPENDENCY_UNAVAILABLE", body, StringComparison.Ordinal);
         Assert.DoesNotContain("EventProcessingDependencyUnavailableException", body, StringComparison.Ordinal);
+        AssertRequestCompletedWithFinalStatus(capturedLogs, StatusCodes.Status503ServiceUnavailable);
         AssertNoStore(response);
     }
 
@@ -212,5 +217,16 @@ public sealed class OperationalSecurityTests
             "no-cache",
             response.Headers.Pragma.ToString(),
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AssertRequestCompletedWithFinalStatus(
+        CapturedLogProvider capturedLogs,
+        int expectedStatusCode)
+    {
+        var completionLog = Assert.Single(
+            capturedLogs.Entries,
+            entry => entry.EventId.Id == 1403);
+        Assert.Contains($"StatusCode {expectedStatusCode}", completionLog.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("StatusCode 200", completionLog.Message, StringComparison.Ordinal);
     }
 }

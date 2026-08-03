@@ -67,14 +67,15 @@ public static class CmsEventsEndpoint
         var authenticatedSubject = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new InvalidOperationException("The authenticated CMS identity has no subject identifier.");
         var batchId = Guid.NewGuid();
+        var correlationId = CorrelationContextAccessor.GetCorrelationId(context);
         var request = new CmsEventBatchRequest(
             batchId,
             parseResult.Items,
-            context.TraceIdentifier,
+            correlationId,
             authenticatedSubject);
         var traceId = Activity.Current?.TraceId.ToString() ?? "none";
         var startedTimestamp = Stopwatch.GetTimestamp();
-        telemetry.RecordStarted(batchId, parseResult.Items.Count, context.TraceIdentifier, traceId);
+        telemetry.RecordStarted(batchId, parseResult.Items.Count, correlationId, traceId);
 
         try
         {
@@ -83,7 +84,7 @@ public static class CmsEventsEndpoint
                 batchId,
                 parseResult.Items.Count,
                 Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
-                context.TraceIdentifier,
+                correlationId,
                 traceId);
             return Results.Ok(new CmsEventBatchResponse(result));
         }
@@ -98,7 +99,7 @@ public static class CmsEventsEndpoint
                 parseResult.Items.Count,
                 "dependency_unavailable",
                 Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
-                context.TraceIdentifier);
+                correlationId);
             throw;
         }
         catch (Exception)
@@ -108,7 +109,7 @@ public static class CmsEventsEndpoint
                 parseResult.Items.Count,
                 "unexpected_failure",
                 Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
-                context.TraceIdentifier);
+                correlationId);
             throw;
         }
     }
