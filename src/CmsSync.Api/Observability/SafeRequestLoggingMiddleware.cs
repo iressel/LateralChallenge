@@ -30,13 +30,14 @@ public sealed class SafeRequestLoggingMiddleware
         ArgumentNullException.ThrowIfNull(context);
 
         var startedTimestamp = Stopwatch.GetTimestamp();
-
-        try
+        var correlationId = CorrelationContextAccessor.GetCorrelationId(context);
+        var traceId = Activity.Current?.TraceId.ToString() ?? "none";
+        context.Response.OnCompleted(() =>
         {
-            await _next(context);
-        }
-        finally
-        {
+            using var scope = CorrelationContextAccessor.BeginLoggingScope(
+                _logger,
+                correlationId,
+                traceId);
             RequestCompleted(
                 _logger,
                 context.Request.Method,
@@ -46,7 +47,10 @@ public sealed class SafeRequestLoggingMiddleware
                 ReadAuthenticationScheme(context),
                 ReadAuthenticatedRole(context),
                 null);
-        }
+            return Task.CompletedTask;
+        });
+
+        await _next(context);
     }
 
     private static string ReadRoutePattern(HttpContext context)

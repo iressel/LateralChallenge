@@ -9,10 +9,6 @@ public sealed class CorrelationContextMiddleware
 
     private const int MaximumCorrelationIdentifierLength = 64;
 
-    private static readonly Func<ILogger, string, string, IDisposable?> CorrelationScope =
-        LoggerMessage.DefineScope<string, string>(
-            "CorrelationId {CorrelationId} TraceId {TraceId}");
-
     private readonly RequestDelegate _next;
     private readonly ILogger<CorrelationContextMiddleware> _logger;
 
@@ -30,14 +26,14 @@ public sealed class CorrelationContextMiddleware
 
         var correlationId = ReadOrCreateCorrelationIdentifier(context.Request.Headers[HeaderName]);
         var traceId = Activity.Current?.TraceId.ToString() ?? "none";
-        context.TraceIdentifier = correlationId;
+        CorrelationContextAccessor.SetCorrelationId(context, correlationId);
         context.Response.OnStarting(() =>
         {
             context.Response.Headers[HeaderName] = correlationId;
             return Task.CompletedTask;
         });
 
-        using var scope = CorrelationScope(_logger, correlationId, traceId);
+        using var scope = CorrelationContextAccessor.BeginLoggingScope(_logger, correlationId, traceId);
         await _next(context);
     }
 
