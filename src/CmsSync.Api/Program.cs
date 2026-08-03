@@ -1,3 +1,4 @@
+using CmsSync.Api.Entities;
 using CmsSync.Api.Webhook;
 using CmsSync.Application.EventIngestion;
 using CmsSync.Infrastructure;
@@ -18,6 +19,7 @@ var app = builder.Build();
 
 app.UseRouting();
 app.UseMiddleware<CmsWebhookRequestSizeMiddleware>();
+app.UseMiddleware<CmsEntityResponseSecurityMiddleware>();
 app.UseMiddleware<AuthenticationResponseSecurityMiddleware>();
 
 if (!app.Environment.IsDevelopment())
@@ -29,6 +31,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapCmsEvents();
+app.MapCmsEntities();
 
 app.Run();
 

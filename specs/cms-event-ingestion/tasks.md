@@ -151,7 +151,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 11. Read API
 
-- [ ] **T012 — Implement role-filtered cursor list and detail queries**
+- [x] **T012 — Implement role-filtered cursor list and detail queries**
   - **Objective:** Add deterministic no-tracking SQL projections for normal/admin visibility, ordinal cursor pagination, opaque payload response, and non-disclosing 404 behavior.
   - **Expected files:** src/CmsSync.Application/EntityQueries/*; src/CmsSync.Infrastructure/Persistence/CmsEntityQueries.cs; src/CmsSync.Api/Controllers/EntitiesController.cs; src/CmsSync.Api/Contracts/Entities/*; read API integration tests.
   - **Requirements / criteria:** FR-022, FR-023, FR-024, FR-029, NFR-007, NFR-008; AC-035–AC-038, AC-042, AC-046.
@@ -159,6 +159,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --filter "Category=ReadApi".
   - **Dependencies:** T006, T008, T010.
   - **Completion criteria:** Query SQL applies role filter/order/limit before projection, the read context never saves/tracks, and endpoint behavior matches the visibility table.
+  - **Completion evidence (2026-08-03):** Added ConsumerAccess-protected list/detail endpoints backed by the production `CmsReadDbContext` abstraction, with SQL-side role visibility, explicit `Latin1_General_100_BIN2` cursor comparison/order, `Take(pageSize + 1)`, direct no-tracking projection, opaque JSON payloads, role-safe 404 responses, and `no-store` on entity responses. Real HTTP/read-only SQL Server coverage passed 28/28 ReadApi tests in 4 seconds; unit tests passed 251/251 in 391 ms; and the complete integration project passed 224/224 in 47 seconds, all with 0 failed or skipped. Release build passed with 0 warnings/errors; full format and diff checks passed; no container remained; no migration/model/schema/package/project or payload-bearing logging change was introduced; and T013 was not started.
   - **Suggested commit boundary:** Consumer read API.
 
 ## 12. Administrative disable API

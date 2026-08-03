@@ -8,6 +8,4 @@ public sealed record CmsEntityReadProjection(
     string CmsPublicationStatus,
     DateTime CurrentVersionOccurredAtUtc,
     DateTime EntityEventHighWatermarkUtc,
-    bool AdministrativeDisabled,
-    DateTime? AdministrativeStateChangedAtUtc,
-    string? AdministrativeStateChangedBy);
+    bool AdministrativeDisabled);
