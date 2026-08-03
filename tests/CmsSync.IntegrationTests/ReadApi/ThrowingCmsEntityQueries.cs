@@ -6,7 +6,7 @@ namespace CmsSync.IntegrationTests.ReadApi;
 internal sealed class ThrowingCmsEntityQueries : ICmsEntityQueries
 {
     private const string UnsafeDiagnostic =
-        "SQL Server failed at table CmsEntities; Password=read-api-secret; stack trace sentinel.";
+        "SQL Server failed at table CmsEntities; Password=<non-secret-test-sentinel>; stack trace sentinel.";
 
     public Task<CmsEntityReadPage> ListAsync(
         CmsEntityListQuery query,

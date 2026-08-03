@@ -20,7 +20,10 @@ internal static class ReadApiTestData
     {
         using var scope = host.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<CmsWriteDbContext>();
-        await context.CmsEntities.ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        await context.CmsEntities.ExecuteDeleteAsync(cancellationToken);
+        await context.CmsDeletionTombstones.ExecuteDeleteAsync(cancellationToken);
     }
 
     public static async Task SeedEntitiesAsync(
