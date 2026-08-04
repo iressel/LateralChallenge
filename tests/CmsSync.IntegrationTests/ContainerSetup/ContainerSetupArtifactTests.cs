@@ -25,6 +25,23 @@ public sealed class ContainerSetupArtifactTests
     }
 
     [Fact]
+    public void MigrationBuildReceivesTheSameSqlServerImageAsTheSqlServices()
+    {
+        var compose = ReadRepositoryFile("compose.yaml");
+
+        Assert.Contains(
+            "x-sql-server-image: &sql-server-image \"${SQL_SERVER_IMAGE:-",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(compose, "image: *sql-server-image"));
+        Assert.Contains(
+            "args:\n        SQL_SERVER_IMAGE: *sql-server-image",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(compose, "SQL_SERVER_IMAGE: *sql-server-image"));
+    }
+
+    [Fact]
     public void SqlServiceUsesRuntimeSecretsPersistentStorageAndABoundedHealthCheck()
     {
         var compose = ReadRepositoryFile("compose.yaml");
@@ -150,17 +167,36 @@ public sealed class ContainerSetupArtifactTests
     public void InitializationCreatesDistinctPrincipalsWithSchemaScopedPermissions()
     {
         var initialization = ReadRepositoryFile("scripts/container/initialize-database.sql");
+        const string cmsDatabaseMarker = "USE [CmsSync];";
+        var cmsDatabaseMarkerIndex = initialization.IndexOf(cmsDatabaseMarker, StringComparison.Ordinal);
+
+        Assert.True(cmsDatabaseMarkerIndex >= 0);
+        var masterInitialization = initialization[..cmsDatabaseMarkerIndex];
+        var cmsInitialization = initialization[cmsDatabaseMarkerIndex..];
 
         Assert.Contains("CREATE DATABASE [CmsSync]", initialization, StringComparison.Ordinal);
         Assert.Contains("CREATE LOGIN [CmsSyncMigration]", initialization, StringComparison.Ordinal);
         Assert.Contains("CREATE LOGIN [CmsSyncWriter]", initialization, StringComparison.Ordinal);
         Assert.Contains("CREATE LOGIN [CmsSyncReader]", initialization, StringComparison.Ordinal);
+        Assert.DoesNotContain("CREATE USER [CmsSyncWriter]", masterInitialization, StringComparison.Ordinal);
+        Assert.Contains("CREATE USER [CmsSyncWriter]", cmsInitialization, StringComparison.Ordinal);
+        Assert.DoesNotContain("sp_getapplock", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sp_releaseapplock", initialization, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("GRANT CONTROL ON SCHEMA::[dbo] TO [CmsSyncMigration]", initialization, StringComparison.Ordinal);
         Assert.Contains("GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [CmsSyncWriter]", initialization, StringComparison.Ordinal);
         Assert.Contains("GRANT SELECT ON SCHEMA::[dbo] TO [CmsSyncReader]", initialization, StringComparison.Ordinal);
         Assert.Contains("DENY INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [CmsSyncReader]", initialization, StringComparison.Ordinal);
         Assert.DoesNotContain("db_owner", initialization, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("db_datawriter", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("db_ddladmin", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("db_securityadmin", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sysadmin", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("serveradmin", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("securityadmin", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ALTER SERVER ROLE", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ALTER ROLE", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sp_addsrvrolemember", initialization, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("sp_addrolemember", initialization, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -208,6 +244,18 @@ public sealed class ContainerSetupArtifactTests
         Assert.Contains("--volumes", validationScript, StringComparison.Ordinal);
         Assert.Contains("--remove-orphans", validationScript, StringComparison.Ordinal);
         Assert.Contains("finally", validationScript, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("$composeStarted", validationScript, StringComparison.Ordinal);
+        Assert.Contains("$validationError = $null", validationScript, StringComparison.Ordinal);
+        Assert.Contains("if ($null -eq $validationError)", validationScript, StringComparison.Ordinal);
+        Assert.Contains(
+            "the original validation error is being preserved",
+            validationScript,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                validationScript,
+                "@(\"compose\", \"down\", \"--volumes\", \"--remove-orphans\")"));
     }
 
     [Fact]
@@ -260,6 +308,20 @@ public sealed class ContainerSetupArtifactTests
     private static string ReadRepositoryFile(string relativePath)
     {
         return File.ReadAllText(Path.Combine(RepositoryRoot, relativePath));
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        var startIndex = 0;
+
+        while ((startIndex = source.IndexOf(value, startIndex, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            startIndex += value.Length;
+        }
+
+        return count;
     }
 
     private static string FindRepositoryRoot(string startingPath)
