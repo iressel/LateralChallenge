@@ -148,6 +148,52 @@ public sealed class CiWorkflowArtifactTests
     }
 
     [Fact]
+    public void ProjectDependencyRegressionNormalizesBothProjectFileSeparators()
+    {
+        var dependencyTests = ReadRepositoryFile(
+            "tests/CmsSync.UnitTests/Architecture/ProjectDependencyTests.cs");
+
+        Assert.Contains("ProjectReferenceSeparatorsResolveToSameCanonicalRepositoryPath", dependencyTests);
+        Assert.Contains(".Replace('\\\\', Path.DirectorySeparatorChar)", dependencyTests);
+        Assert.Contains(".Replace('/', Path.DirectorySeparatorChar)", dependencyTests);
+        Assert.Contains(
+            "Path.GetFullPath(Path.Combine(projectDirectory, normalizedInclude))",
+            dependencyTests);
+        Assert.Contains(".Replace('\\\\', '/')", dependencyTests);
+    }
+
+    [Fact]
+    public void CleanupVerifierWaitsBoundedlyWithoutRemovingDockerResources()
+    {
+        var cleanupScript = ReadRepositoryFile("scripts/verify-container-cleanup.ps1");
+
+        Assert.Contains("function Wait-ForDockerResourcesToDisappear", cleanupScript);
+        Assert.Contains("$testcontainersCleanupTimeoutSeconds = 30", cleanupScript);
+        Assert.Contains("$testcontainersCleanupPollIntervalSeconds = 1", cleanupScript);
+        Assert.Contains("Start-Sleep -Seconds $PollIntervalSeconds", cleanupScript);
+        Assert.Contains("Test-DockerResourcesRemain -Label $Label", cleanupScript);
+        Assert.Contains("\"ps\"", cleanupScript);
+        Assert.Contains("\"volume\"", cleanupScript);
+        Assert.Contains("\"ls\"", cleanupScript);
+        Assert.Contains("\"label=$Label\"", cleanupScript);
+        Assert.Contains("-Label \"org.testcontainers=true\"", cleanupScript);
+
+        var prohibitedCleanupCommands = new[]
+        {
+            "docker rm",
+            "docker container rm",
+            "docker volume rm",
+            "docker system prune",
+            "\"rm\"",
+            "\"prune\"",
+            "--force",
+        };
+        Assert.All(
+            prohibitedCleanupCommands,
+            command => Assert.DoesNotContain(command, cleanupScript, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void ArtifactUploadAlwaysPublishesDistinctTrxAndCoberturaEvidence()
     {
         var workflow = ReadRepositoryFile(".github/workflows/ci.yml");

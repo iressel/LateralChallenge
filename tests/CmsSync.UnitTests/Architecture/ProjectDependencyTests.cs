@@ -50,6 +50,25 @@ public sealed class ProjectDependencyTests
         }
     }
 
+    [Fact]
+    public void ProjectReferenceSeparatorsResolveToSameCanonicalRepositoryPath()
+    {
+        var repositoryRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+        var projectDirectory = Path.Combine(repositoryRoot, "src", "CmsSync.Application");
+
+        var windowsStyleReference = ResolveProjectReference(
+            repositoryRoot,
+            projectDirectory,
+            @"..\CmsSync.Domain\CmsSync.Domain.csproj");
+        var unixStyleReference = ResolveProjectReference(
+            repositoryRoot,
+            projectDirectory,
+            "../CmsSync.Domain/CmsSync.Domain.csproj");
+
+        Assert.Equal("src/CmsSync.Domain/CmsSync.Domain.csproj", windowsStyleReference);
+        Assert.Equal(windowsStyleReference, unixStyleReference);
+    }
+
     private static string[] ReadProjectReferences(string repositoryRoot, string projectPath)
     {
         var projectDirectory = Path.GetDirectoryName(projectPath)
@@ -65,13 +84,24 @@ public sealed class ProjectDependencyTests
                 throw new InvalidDataException($"ProjectReference has no Include value in {projectPath}.");
             }
 
-            var absoluteReference = Path.GetFullPath(Path.Combine(projectDirectory, include));
-            var repositoryRelativeReference = Path.GetRelativePath(repositoryRoot, absoluteReference)
-                .Replace('\\', '/');
-            references.Add(repositoryRelativeReference);
+            references.Add(ResolveProjectReference(repositoryRoot, projectDirectory, include));
         }
 
         return [.. references.Order(StringComparer.Ordinal)];
+    }
+
+    private static string ResolveProjectReference(
+        string repositoryRoot,
+        string projectDirectory,
+        string include)
+    {
+        var normalizedInclude = include
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
+        var absoluteReference = Path.GetFullPath(Path.Combine(projectDirectory, normalizedInclude));
+
+        return Path.GetRelativePath(repositoryRoot, absoluteReference)
+            .Replace('\\', '/');
     }
 
     private static string FindRepositoryRoot(string startingPath)
