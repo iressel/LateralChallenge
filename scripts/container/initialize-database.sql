@@ -1,0 +1,91 @@
+:on error exit
+
+USE [master];
+GO
+
+IF DB_ID(N'CmsSync') IS NULL
+BEGIN
+    CREATE DATABASE [CmsSync];
+END;
+GO
+
+IF SUSER_ID(N'CmsSyncMigration') IS NULL
+BEGIN
+    CREATE LOGIN [CmsSyncMigration]
+        WITH PASSWORD = N'$(MIGRATION_SQL_PASSWORD)',
+             CHECK_POLICY = ON,
+             CHECK_EXPIRATION = OFF;
+END
+ELSE
+BEGIN
+    ALTER LOGIN [CmsSyncMigration]
+        WITH PASSWORD = N'$(MIGRATION_SQL_PASSWORD)';
+END;
+GO
+
+IF SUSER_ID(N'CmsSyncWriter') IS NULL
+BEGIN
+    CREATE LOGIN [CmsSyncWriter]
+        WITH PASSWORD = N'$(WRITE_SQL_PASSWORD)',
+             CHECK_POLICY = ON,
+             CHECK_EXPIRATION = OFF;
+END
+ELSE
+BEGIN
+    ALTER LOGIN [CmsSyncWriter]
+        WITH PASSWORD = N'$(WRITE_SQL_PASSWORD)';
+END;
+GO
+
+IF SUSER_ID(N'CmsSyncReader') IS NULL
+BEGIN
+    CREATE LOGIN [CmsSyncReader]
+        WITH PASSWORD = N'$(READ_SQL_PASSWORD)',
+             CHECK_POLICY = ON,
+             CHECK_EXPIRATION = OFF;
+END
+ELSE
+BEGIN
+    ALTER LOGIN [CmsSyncReader]
+        WITH PASSWORD = N'$(READ_SQL_PASSWORD)';
+END;
+GO
+
+IF DATABASE_PRINCIPAL_ID(N'CmsSyncWriter') IS NULL
+BEGIN
+    CREATE USER [CmsSyncWriter] FOR LOGIN [CmsSyncWriter];
+END;
+
+GRANT EXECUTE ON OBJECT::[sys].[sp_getapplock] TO [CmsSyncWriter];
+GRANT EXECUTE ON OBJECT::[sys].[sp_releaseapplock] TO [CmsSyncWriter];
+GO
+
+USE [CmsSync];
+GO
+
+IF DATABASE_PRINCIPAL_ID(N'CmsSyncMigration') IS NULL
+BEGIN
+    CREATE USER [CmsSyncMigration] FOR LOGIN [CmsSyncMigration];
+END;
+
+IF DATABASE_PRINCIPAL_ID(N'CmsSyncWriter') IS NULL
+BEGIN
+    CREATE USER [CmsSyncWriter] FOR LOGIN [CmsSyncWriter];
+END;
+
+IF DATABASE_PRINCIPAL_ID(N'CmsSyncReader') IS NULL
+BEGIN
+    CREATE USER [CmsSyncReader] FOR LOGIN [CmsSyncReader];
+END;
+GO
+
+GRANT CREATE TABLE TO [CmsSyncMigration];
+GRANT CONTROL ON SCHEMA::[dbo] TO [CmsSyncMigration];
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [CmsSyncWriter];
+
+GRANT SELECT ON SCHEMA::[dbo] TO [CmsSyncReader];
+DENY INSERT, UPDATE, DELETE ON SCHEMA::[dbo] TO [CmsSyncReader];
+DENY CREATE TABLE, CREATE VIEW, CREATE PROCEDURE, CREATE FUNCTION, CREATE SCHEMA
+    TO [CmsSyncReader];
+GO
