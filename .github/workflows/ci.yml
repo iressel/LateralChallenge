@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - "feature/t016-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  verify:
+    name: x86-64 quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Assert x86-64 Docker host
+        shell: bash
+        run: |
+          architecture="$(docker info --format '{{.Architecture}}' | tr '[:upper:]' '[:lower:]')"
+          case "$architecture" in
+            amd64|x86_64)
+              echo "Docker host architecture is supported."
+              ;;
+            *)
+              echo "::error::CI requires an x86-64 Docker host."
+              exit 1
+              ;;
+          esac
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Validate repository policy
+        id: policy
+        shell: pwsh
+        run: ./scripts/validate-repository-policy.ps1
+
+      - name: Restore from NuGet.org
+        id: restore
+        run: >-
+          dotnet restore LateralChallenge.sln
+          --source https://api.nuget.org/v3/index.json
+
+      - name: Build Release
+        id: build
+        run: >-
+          dotnet build LateralChallenge.sln
+          --configuration Release
+          --no-restore
+
+      - name: Verify formatting
+        id: format
+        run: >-
+          dotnet format LateralChallenge.sln
+          --verify-no-changes
+          --no-restore
+
+      - name: Run SQL Server smoke tests
+        id: sql-smoke
+        run: >-
+          dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj
+          --configuration Release
+          --no-build
+          --filter "Category=SqlServer"
+          --logger "trx;LogFileName=sql-server-smoke.trx"
+          --results-directory artifacts/test-results/sql-server
+
+      - name: Run unit tests with coverage
+        id: unit-tests
+        run: >-
+          dotnet test tests/CmsSync.UnitTests/CmsSync.UnitTests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=unit-tests.trx"
+          --results-directory artifacts/test-results/unit
+          --collect "XPlat Code Coverage"
+
+      - name: Run complete integration tests with coverage
+        id: integration-tests
+        run: >-
+          dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=integration-tests.trx"
+          --results-directory artifacts/test-results/integration
+          --collect "XPlat Code Coverage"
+
+      - name: Run clean-volume Compose smoke
+        id: compose-smoke
+        shell: pwsh
+        run: ./scripts/validate-container-setup.ps1
+
+      - name: Verify repository and container cleanup
+        id: cleanup
+        if: always()
+        shell: pwsh
+        run: ./scripts/verify-container-cleanup.ps1
+
+      - name: Upload test and coverage evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-test-evidence
+          path: |
+            artifacts/test-results/**/*.trx
+            artifacts/test-results/**/coverage.cobertura.xml
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: false
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## CI quality gates"
+            echo "- Build gate: ${{ steps.build.outcome }}"
+            echo "- Formatting gate: ${{ steps.format.outcome }}"
+            echo "- SQL Server smoke: ${{ steps.sql-smoke.outcome }}"
+            echo "- Unit test evidence: artifacts/test-results/unit"
+            echo "- Integration evidence: artifacts/test-results/integration"
+            echo "- Compose smoke: ${{ steps.compose-smoke.outcome }}"
+            echo "- Artifact: ci-test-evidence"
+          } >> "$GITHUB_STEP_SUMMARY"
