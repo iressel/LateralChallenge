@@ -135,6 +135,24 @@ public sealed class CiWorkflowArtifactTests
     }
 
     [Fact]
+    public void EveryTestGateDisablesImplicitBuildAndRestore()
+    {
+        var workflow = ReadRepositoryFile(".github/workflows/ci.yml");
+        var testCommandBlocks = Regex.Matches(
+            workflow,
+            "(?ms)^          dotnet test .*?(?=^      - name:|\\z)");
+
+        Assert.Equal(3, testCommandBlocks.Count);
+        Assert.All(
+            testCommandBlocks.Cast<Match>(),
+            testCommandBlock =>
+            {
+                Assert.Contains("--no-build", testCommandBlock.Value, StringComparison.Ordinal);
+                Assert.Contains("--no-restore", testCommandBlock.Value, StringComparison.Ordinal);
+            });
+    }
+
+    [Fact]
     public void ComposeSmokeAndFinalCleanupReuseRepositoryScripts()
     {
         var workflow = ReadRepositoryFile(".github/workflows/ci.yml");
@@ -171,7 +189,7 @@ public sealed class CiWorkflowArtifactTests
         Assert.Contains("$testcontainersCleanupTimeoutSeconds = 30", cleanupScript);
         Assert.Contains("$testcontainersCleanupPollIntervalSeconds = 1", cleanupScript);
         Assert.Contains("Start-Sleep -Seconds $PollIntervalSeconds", cleanupScript);
-        Assert.Contains("Test-DockerResourcesRemain -Label $Label", cleanupScript);
+        Assert.Contains("-Label $Label", cleanupScript);
         Assert.Contains("\"ps\"", cleanupScript);
         Assert.Contains("\"volume\"", cleanupScript);
         Assert.Contains("\"ls\"", cleanupScript);
@@ -191,6 +209,30 @@ public sealed class CiWorkflowArtifactTests
         Assert.All(
             prohibitedCleanupCommands,
             command => Assert.DoesNotContain(command, cleanupScript, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CleanupVerifierReportsOnlySafeCommandFailureContext()
+    {
+        var cleanupScript = ReadRepositoryFile("scripts/verify-container-cleanup.ps1");
+        var diagnosticLine = cleanupScript
+            .Split('\n')
+            .Single(line => line.Contains("Cleanup verification operation", StringComparison.Ordinal));
+
+        Assert.Contains("[string] $SafeOperationDescription", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("-SafeOperationDescription $ContainerOperationDescription", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("-SafeOperationDescription $VolumeOperationDescription", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("-SafeOperationDescription \"read repository status\"", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("\"list Compose containers\"", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("\"list Compose volumes\"", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("\"list Testcontainers containers\"", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("\"list Testcontainers volumes\"", cleanupScript, StringComparison.Ordinal);
+        Assert.Contains("$SafeOperationDescription", diagnosticLine, StringComparison.Ordinal);
+        Assert.Contains("$Command", diagnosticLine, StringComparison.Ordinal);
+        Assert.Contains("$exitCode", diagnosticLine, StringComparison.Ordinal);
+        Assert.DoesNotContain("$Arguments", diagnosticLine, StringComparison.Ordinal);
+        Assert.DoesNotContain("$output", diagnosticLine, StringComparison.Ordinal);
+        Assert.Contains("2>$null", cleanupScript, StringComparison.Ordinal);
     }
 
     [Fact]

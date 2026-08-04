@@ -84,6 +84,7 @@ jobs:
           dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj
           --configuration Release
           --no-build
+          --no-restore
           --filter "Category=SqlServer"
           --logger "trx;LogFileName=sql-server-smoke.trx"
           --results-directory artifacts/test-results/sql-server
@@ -94,6 +95,7 @@ jobs:
           dotnet test tests/CmsSync.UnitTests/CmsSync.UnitTests.csproj
           --configuration Release
           --no-build
+          --no-restore
           --logger "trx;LogFileName=unit-tests.trx"
           --results-directory artifacts/test-results/unit
           --collect "XPlat Code Coverage"
@@ -104,6 +106,7 @@ jobs:
           dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj
           --configuration Release
           --no-build
+          --no-restore
           --logger "trx;LogFileName=integration-tests.trx"
           --results-directory artifacts/test-results/integration
           --collect "XPlat Code Coverage"
