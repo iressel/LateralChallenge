@@ -21,6 +21,57 @@ function Invoke-CheckedCapture {
     return ($output -join [Environment]::NewLine)
 }
 
+function Test-DockerResourcesRemain {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Label
+    )
+
+    $containers = Invoke-CheckedCapture -Command "docker" -Arguments @(
+        "ps",
+        "--all",
+        "--quiet",
+        "--filter",
+        "label=$Label"
+    )
+    $volumes = Invoke-CheckedCapture -Command "docker" -Arguments @(
+        "volume",
+        "ls",
+        "--quiet",
+        "--filter",
+        "label=$Label"
+    )
+
+    return ![string]::IsNullOrWhiteSpace($containers) -or
+        ![string]::IsNullOrWhiteSpace($volumes)
+}
+
+function Wait-ForDockerResourcesToDisappear {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Label,
+
+        [Parameter(Mandatory)]
+        [ValidateRange(1, 300)]
+        [int] $TimeoutSeconds,
+
+        [Parameter(Mandatory)]
+        [ValidateRange(1, 30)]
+        [int] $PollIntervalSeconds
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while (Test-DockerResourcesRemain -Label $Label) {
+        if ([DateTimeOffset]::UtcNow -ge $deadline) {
+            return $false
+        }
+
+        Start-Sleep -Seconds $PollIntervalSeconds
+    }
+
+    return $true
+}
+
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $repositoryState = Invoke-CheckedCapture -Command "git" -Arguments @(
     "-C",
@@ -35,44 +86,19 @@ if (![string]::IsNullOrWhiteSpace($repositoryState)) {
 
 $composeProjects = @("cms-sync", "cmssync-t015-validation")
 foreach ($composeProject in $composeProjects) {
-    $containers = Invoke-CheckedCapture -Command "docker" -Arguments @(
-        "ps",
-        "--all",
-        "--quiet",
-        "--filter",
-        "label=com.docker.compose.project=$composeProject"
-    )
-    $volumes = Invoke-CheckedCapture -Command "docker" -Arguments @(
-        "volume",
-        "ls",
-        "--quiet",
-        "--filter",
-        "label=com.docker.compose.project=$composeProject"
-    )
-
-    if (![string]::IsNullOrWhiteSpace($containers) -or
-        ![string]::IsNullOrWhiteSpace($volumes)) {
+    if (Test-DockerResourcesRemain -Label "com.docker.compose.project=$composeProject") {
         throw "A repository Compose container or volume remained after validation."
     }
 }
 
-$testcontainersContainers = Invoke-CheckedCapture -Command "docker" -Arguments @(
-    "ps",
-    "--all",
-    "--quiet",
-    "--filter",
-    "label=org.testcontainers=true"
-)
-$testcontainersVolumes = Invoke-CheckedCapture -Command "docker" -Arguments @(
-    "volume",
-    "ls",
-    "--quiet",
-    "--filter",
-    "label=org.testcontainers=true"
-)
-
-if (![string]::IsNullOrWhiteSpace($testcontainersContainers) -or
-    ![string]::IsNullOrWhiteSpace($testcontainersVolumes)) {
+# Testcontainers disposal is asynchronous, so allow its resource reaper a bounded grace period.
+$testcontainersCleanupTimeoutSeconds = 30
+$testcontainersCleanupPollIntervalSeconds = 1
+$testcontainersCleanupCompleted = Wait-ForDockerResourcesToDisappear `
+    -Label "org.testcontainers=true" `
+    -TimeoutSeconds $testcontainersCleanupTimeoutSeconds `
+    -PollIntervalSeconds $testcontainersCleanupPollIntervalSeconds
+if (!$testcontainersCleanupCompleted) {
     throw "A Testcontainers resource remained after validation."
 }
 
