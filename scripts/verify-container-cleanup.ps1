@@ -7,15 +7,20 @@ $ErrorActionPreference = "Stop"
 function Invoke-CheckedCapture {
     param(
         [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $SafeOperationDescription,
+
+        [Parameter(Mandatory)]
         [string] $Command,
 
         [Parameter(Mandatory)]
         [string[]] $Arguments
     )
 
-    $output = & $Command @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "A cleanup-verification command failed."
+    $output = & $Command @Arguments 2>$null
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Cleanup verification operation '$SafeOperationDescription' failed for executable '$Command' with exit code $exitCode."
     }
 
     return ($output -join [Environment]::NewLine)
@@ -24,17 +29,31 @@ function Invoke-CheckedCapture {
 function Test-DockerResourcesRemain {
     param(
         [Parameter(Mandatory)]
-        [string] $Label
+        [string] $Label,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ContainerOperationDescription,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $VolumeOperationDescription
     )
 
-    $containers = Invoke-CheckedCapture -Command "docker" -Arguments @(
+    $containers = Invoke-CheckedCapture `
+        -SafeOperationDescription $ContainerOperationDescription `
+        -Command "docker" `
+        -Arguments @(
         "ps",
         "--all",
         "--quiet",
         "--filter",
         "label=$Label"
     )
-    $volumes = Invoke-CheckedCapture -Command "docker" -Arguments @(
+    $volumes = Invoke-CheckedCapture `
+        -SafeOperationDescription $VolumeOperationDescription `
+        -Command "docker" `
+        -Arguments @(
         "volume",
         "ls",
         "--quiet",
@@ -61,7 +80,10 @@ function Wait-ForDockerResourcesToDisappear {
     )
 
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
-    while (Test-DockerResourcesRemain -Label $Label) {
+    while (Test-DockerResourcesRemain `
+            -Label $Label `
+            -ContainerOperationDescription "list Testcontainers containers" `
+            -VolumeOperationDescription "list Testcontainers volumes") {
         if ([DateTimeOffset]::UtcNow -ge $deadline) {
             return $false
         }
@@ -73,7 +95,10 @@ function Wait-ForDockerResourcesToDisappear {
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
-$repositoryState = Invoke-CheckedCapture -Command "git" -Arguments @(
+$repositoryState = Invoke-CheckedCapture `
+    -SafeOperationDescription "read repository status" `
+    -Command "git" `
+    -Arguments @(
     "-C",
     $repositoryRoot,
     "status",
@@ -86,7 +111,10 @@ if (![string]::IsNullOrWhiteSpace($repositoryState)) {
 
 $composeProjects = @("cms-sync", "cmssync-t015-validation")
 foreach ($composeProject in $composeProjects) {
-    if (Test-DockerResourcesRemain -Label "com.docker.compose.project=$composeProject") {
+    if (Test-DockerResourcesRemain `
+            -Label "com.docker.compose.project=$composeProject" `
+            -ContainerOperationDescription "list Compose containers" `
+            -VolumeOperationDescription "list Compose volumes") {
         throw "A repository Compose container or volume remained after validation."
     }
 }

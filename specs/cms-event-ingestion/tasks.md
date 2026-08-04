@@ -203,7 +203,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
 
 ## 15. CI
 
-- [ ] **T016 — Create x86-64 CI for build, real SQL tests, formatting, quality, and secret/image checks**
+- [x] **T016 — Create x86-64 CI for build, real SQL tests, formatting, quality, and secret/image checks**
   - **Objective:** Make the full contract reproducibly verifiable on a supported runner, including SQL Server relational tests and container pinning.
   - **Expected files:** .github/workflows/ci.yml or the selected CI provider equivalent; optional scripts limited to deterministic validation.
   - **Requirements / criteria:** NFR-001, NFR-005, NFR-006, SEC-001, SEC-003; AC-048, AC-052, AC-055, AC-056.
@@ -211,6 +211,7 @@ No task is complete in Phase 2.2. Paths below are expected Phase 3 files, not fi
   - **Validation commands:** dotnet restore LateralChallenge.sln; dotnet build LateralChallenge.sln --configuration Release --no-restore; dotnet test LateralChallenge.sln --configuration Release --no-build; dotnet format LateralChallenge.sln --verify-no-changes --no-restore; CI workflow syntax validation.
   - **Dependencies:** T015.
   - **Completion criteria:** A clean x86-64 pipeline passes all unit/integration/API tests, fails on warnings/test failures/secrets/mutable SQL latest, and publishes usable test evidence.
+  - **Completion evidence (2026-08-04):** GitHub Actions workflow `CI` passed remote run number 4 (run id `30916169011`) on the `ubuntu-24.04` x86-64 runner with minimum `contents: read` permission and the official checkout, setup-dotnet, and upload-artifact actions pinned to immutable SHAs `3d3c42e5aac5ba805825da76410c181273ba90b1`, `a98b56852c35b8e3190ac28c8c2271da59106c68`, and `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`. The deterministic repository-policy scan passed without being treated as a replacement for GitHub secret scanning or a dedicated security product; Release build passed with 0 warnings/errors; formatting passed; SQL Server passed 20/20, unit tests 252/252, and complete integration tests 297/297, all with 0 failed and 0 skipped. Clean-volume Compose passed in 40.84 seconds and final repository/container cleanup passed. TRX and Cobertura evidence was published as artifact `ci-test-evidence` (artifact id `8895231206`). Validation found no secrets, mutable SQL image, LocalDB, emulation, orphan resources, or migration/model/schema/package/project changes, and T017 was not started.
   - **Suggested commit boundary:** Continuous integration and quality gates.
 
 ## 16. README
