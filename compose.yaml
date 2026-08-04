@@ -45,6 +45,8 @@ services:
     build:
       context: .
       target: migration
+      args:
+        SQL_SERVER_IMAGE: *sql-server-image
     depends_on:
       db-init:
         condition: service_completed_successfully

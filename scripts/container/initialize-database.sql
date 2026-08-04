@@ -51,15 +51,6 @@ BEGIN
 END;
 GO
 
-IF DATABASE_PRINCIPAL_ID(N'CmsSyncWriter') IS NULL
-BEGIN
-    CREATE USER [CmsSyncWriter] FOR LOGIN [CmsSyncWriter];
-END;
-
-GRANT EXECUTE ON OBJECT::[sys].[sp_getapplock] TO [CmsSyncWriter];
-GRANT EXECUTE ON OBJECT::[sys].[sp_releaseapplock] TO [CmsSyncWriter];
-GO
-
 USE [CmsSync];
 GO
 

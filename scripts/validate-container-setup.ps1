@@ -334,7 +334,7 @@ function Assert-NoProjectResources {
     }
 }
 
-$composeStarted = $false
+$validationError = $null
 try {
     Invoke-DockerCommand -Arguments @("version", "--format", "{{.Server.Version}}")
     Invoke-DockerCommand -Arguments @("compose", "version", "--short")
@@ -384,7 +384,6 @@ try {
         "360"
     )
     $stopwatch.Stop()
-    $composeStarted = $true
 
     Assert-ServiceState
     Assert-HttpStatus -Uri "http://127.0.0.1:$apiPort/health/live" -ExpectedStatus 200
@@ -414,16 +413,24 @@ try {
         $stopwatch.Elapsed.TotalSeconds)
     Write-Output "Liveness, readiness, migration, read-only SQL, consumer read, and webhook write checks passed."
 }
+catch {
+    $validationError = $_
+    throw
+}
 finally {
     try {
-        if ($composeStarted) {
+        try {
             Invoke-DockerCommand -Arguments @("compose", "down", "--volumes", "--remove-orphans")
-        }
-        else {
-            Invoke-DockerCommand -Arguments @("compose", "down", "--volumes", "--remove-orphans")
-        }
 
-        Assert-NoProjectResources
+            Assert-NoProjectResources
+        }
+        catch {
+            if ($null -eq $validationError) {
+                throw
+            }
+
+            Write-Warning "Container cleanup also failed; the original validation error is being preserved."
+        }
     }
     finally {
         foreach ($variableName in $managedEnvironmentVariables) {
