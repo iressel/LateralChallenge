@@ -278,6 +278,94 @@ public sealed class FinalReviewArtifactTests
     }
 
     [Fact]
+    public void StartupCredentialValidationCollectionIsolationRemainsNarrowAndT018IsIncomplete()
+    {
+        const string startupValidationTestsPath =
+            "tests/CmsSync.IntegrationTests/Authentication/StartupCredentialValidationTests.cs";
+        const string collectionDefinitionPath =
+            "tests/CmsSync.IntegrationTests/Authentication/StartupCredentialValidationCollectionDefinition.cs";
+
+        var startupValidationTests = ReadRepositoryFile(startupValidationTestsPath);
+        var collectionDefinition = ReadRepositoryFile(collectionDefinitionPath);
+        var authenticationTestFiles = EnumerateRepositoryFiles(
+                "tests/CmsSync.IntegrationTests/Authentication/",
+                ".cs")
+            .ToArray();
+        var integrationTestFiles = EnumerateRepositoryFiles(
+                "tests/CmsSync.IntegrationTests/",
+                ".cs")
+            .ToArray();
+        var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
+
+        Assert.Contains(
+            "[Collection(StartupCredentialValidationCollectionDefinition.Name)]",
+            startupValidationTests,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[CollectionDefinition(Name, DisableParallelization = true)]",
+            collectionDefinition,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "ICollectionFixture<",
+            collectionDefinition,
+            StringComparison.Ordinal);
+
+        var collectionNameMatch = Regex.Match(
+            collectionDefinition,
+            "public\\s+const\\s+string\\s+Name\\s*=\\s*\"([^\"]+)\"\\s*;",
+            RegexOptions.CultureInvariant);
+        Assert.True(collectionNameMatch.Success, "Collection name constant was not found.");
+        Assert.False(
+            string.IsNullOrWhiteSpace(collectionNameMatch.Groups[1].Value),
+            "Collection name constant must not be empty.");
+        Assert.Equal("StartupCredentialValidation", collectionNameMatch.Groups[1].Value);
+
+        var startupValidationCollectionConsumers = authenticationTestFiles
+            .Where(path => ReadRepositoryFile(path).Contains(
+                "[Collection(StartupCredentialValidationCollectionDefinition.Name)]",
+                StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            [startupValidationTestsPath],
+            startupValidationCollectionConsumers);
+
+        foreach (var path in integrationTestFiles)
+        {
+            var source = ReadRepositoryFile(path);
+
+            Assert.False(
+                Regex.IsMatch(
+                    source,
+                    "\\[assembly:\\s*CollectionBehavior\\s*\\(\\s*DisableTestParallelization\\s*=\\s*true",
+                    RegexOptions.CultureInvariant),
+                $"Assembly-wide test parallelization disablement is not allowed: {path}");
+        }
+
+        const string xunitRunnerConfigurationPath = "tests/CmsSync.IntegrationTests/xunit.runner.json";
+
+        if (PathExistsInRepository(xunitRunnerConfigurationPath))
+        {
+            var xunitRunnerConfiguration = ReadRepositoryFile(xunitRunnerConfigurationPath);
+
+            Assert.DoesNotContain(
+                "\"parallelizeTestCollections\": false",
+                xunitRunnerConfiguration,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                "\"parallelizeAssembly\": false",
+                xunitRunnerConfiguration,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        var t018Block = ExtractTaskBlock(tasks, "T018");
+        Assert.Contains("- [ ] **T018", t018Block, StringComparison.Ordinal);
+        Assert.DoesNotContain("- [x] **T018", t018Block, StringComparison.Ordinal);
+        Assert.DoesNotContain("Completion evidence (", t018Block, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ContractArtifactsAgreeOnRawArrayWireIdNormalizationAndTimestampSeparation()
     {
         var spec = ReadRepositoryFile("specs/cms-event-ingestion/spec.md");
