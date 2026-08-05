@@ -5,6 +5,7 @@ using Xunit;
 
 namespace CmsSync.IntegrationTests.Persistence.Migrations;
 
+[Trait("Category", "SqlServer")]
 public sealed partial class InitialCmsPersistenceScriptTests
 {
     private const string MigrationId = "20260802142305_InitialCmsPersistence";
