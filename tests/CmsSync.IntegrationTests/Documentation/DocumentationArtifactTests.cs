@@ -135,6 +135,37 @@ public sealed class DocumentationArtifactTests
     }
 
     [Fact]
+    public void ReadmeDocumentsControllerArchitectureAndDevelopmentOnlySwaggerExposure()
+    {
+        var readme = ReadRepositoryFile("README.md");
+
+        Assert.Contains(
+            "API shape: ASP.NET Core attribute-routed controllers",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains("### Development Swagger and OpenAPI", readme, StringComparison.Ordinal);
+        Assert.Contains("Swagger UI is enabled only in Development.", readme, StringComparison.Ordinal);
+        Assert.Contains("http://localhost:8080/swagger", readme, StringComparison.Ordinal);
+        Assert.Contains("http://localhost:8080/swagger/index.html", readme, StringComparison.Ordinal);
+        Assert.Contains("http://localhost:8080/swagger/v1/swagger.json", readme, StringComparison.Ordinal);
+        Assert.Contains("`CmsBasic` for `POST /cms/events`", readme, StringComparison.Ordinal);
+        Assert.Contains(
+            "`ConsumerBasic` for `GET /api/entities`, `GET /api/entities/{entityId}`, and `PUT /api/entities/{entityId}/administrative-state`",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Administrative-state updates still authenticate through `ConsumerBasic` and require the `Administrator` role; normal consumer credentials return `403`.",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains("Credentials are never committed or prefilled in repository artifacts.", readme, StringComparison.Ordinal);
+        Assert.Contains(
+            "The documented webhook request example in Swagger remains a raw JSON array (no wrapper object).",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains("Swagger UI and the OpenAPI JSON route are not mapped outside Development.", readme, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReadmeWebhookRequestAndResponseExamplesUseExactContracts()
     {
         var readme = ReadRepositoryFile("README.md");

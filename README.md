@@ -14,7 +14,7 @@ This README documents implemented behavior from current source and tests. It doe
 ## 2. Implemented stack and boundaries
 
 - Runtime: .NET 10
-- API shape: ASP.NET Core minimal endpoints
+- API shape: ASP.NET Core attribute-routed controllers
 - Persistence: EF Core 10 with Microsoft SQL Server only
 - Solution file: [LateralChallenge.sln](LateralChallenge.sln)
 - Production write/read boundary: separate write and read connection strings
@@ -136,6 +136,21 @@ Behavior:
 - Wrong-scheme credentials return `401` for the endpoint scheme.
 - A normal consumer on administrator-only operations returns `403` with no challenge.
 - Authentication failures and HTTPS redirects are protected with `Cache-Control: no-store`.
+
+### Development Swagger and OpenAPI
+
+- Swagger UI is enabled only in Development.
+- With the default Compose API port, local documentation endpoints are:
+	- `http://localhost:8080/swagger`
+	- `http://localhost:8080/swagger/index.html`
+	- `http://localhost:8080/swagger/v1/swagger.json`
+- The Swagger authorization dialog exposes two separate Basic entries:
+	- `CmsBasic` for `POST /cms/events`
+	- `ConsumerBasic` for `GET /api/entities`, `GET /api/entities/{entityId}`, and `PUT /api/entities/{entityId}/administrative-state`
+- Administrative-state updates still authenticate through `ConsumerBasic` and require the `Administrator` role; normal consumer credentials return `403`.
+- Credentials are never committed or prefilled in repository artifacts.
+- The documented webhook request example in Swagger remains a raw JSON array (no wrapper object).
+- Swagger UI and the OpenAPI JSON route are not mapped outside Development.
 
 ## 7. CMS webhook request contract
 

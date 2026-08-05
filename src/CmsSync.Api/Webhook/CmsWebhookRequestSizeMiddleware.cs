@@ -71,8 +71,8 @@ public sealed class CmsWebhookRequestSizeMiddleware
         }
 
         var path = request.Path.Value;
-        return string.Equals(path, CmsEventsEndpoint.Route, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(path, CmsEventsEndpoint.Route + "/", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(path, CmsEventsRoutes.Route, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(path, CmsEventsRoutes.Route + "/", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<byte[]?> ReadBoundedBodyAsync(

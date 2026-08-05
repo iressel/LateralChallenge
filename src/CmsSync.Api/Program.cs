@@ -1,7 +1,7 @@
-using CmsSync.Api.Entities;
 using CmsSync.Api.Errors;
 using CmsSync.Api.Health;
 using CmsSync.Api.Observability;
+using CmsSync.Api.OpenApi;
 using CmsSync.Api.Security;
 using CmsSync.Api.Webhook;
 using CmsSync.Application.EventIngestion;
@@ -21,7 +21,9 @@ var readConnectionString = GetRequiredConnectionString(builder.Configuration, "R
 builder.Services.AddCmsPersistence(writeConnectionString, readConnectionString);
 builder.Services.AddCmsAuthentication(builder.Configuration);
 builder.Services.AddProblemDetails();
+builder.Services.AddControllers();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddCmsSyncOpenApi();
 builder.Services.AddSingleton<CmsEventBatchTelemetry>();
 builder.Services.AddSingleton<CmsEventIngestionLimits>();
 builder.Services.AddSingleton<CmsEventArrayParser>();
@@ -68,8 +70,12 @@ app.UseMiddleware<CmsWebhookRequestSizeMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapCmsEvents();
-app.MapCmsEntities();
+if (app.Environment.IsDevelopment())
+{
+    app.UseCmsSyncSwagger();
+}
+
+app.MapControllers();
 app.MapHealthChecks(
     HealthEndpointRoutes.Liveness,
     new HealthCheckOptions

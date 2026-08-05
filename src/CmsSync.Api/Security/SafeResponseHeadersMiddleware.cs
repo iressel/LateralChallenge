@@ -34,7 +34,7 @@ public sealed class SafeResponseHeadersMiddleware
     private static bool RequiresNoStore(HttpContext context)
     {
         return context.Response.StatusCode >= StatusCodes.Status400BadRequest ||
-               context.Request.Path.StartsWithSegments(CmsEntitiesEndpoint.RoutePrefix) ||
+               context.Request.Path.StartsWithSegments(CmsEntitiesRoutes.RoutePrefix) ||
                context.Request.Path.StartsWithSegments(HealthEndpointRoutes.Prefix) ||
                IsHttpsRedirect(context.Response);
     }

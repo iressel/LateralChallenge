@@ -70,7 +70,7 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 "dependency_unavailable");
         }
 
-        if (context.Request.Path.StartsWithSegments(CmsEventsEndpoint.Route))
+        if (context.Request.Path.StartsWithSegments(CmsEventsRoutes.Route))
         {
             return (
                 StatusCodes.Status500InternalServerError,
@@ -80,10 +80,10 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 "unexpected_failure");
         }
 
-        if (context.Request.Path.StartsWithSegments(CmsEntitiesEndpoint.RoutePrefix))
+        if (context.Request.Path.StartsWithSegments(CmsEntitiesRoutes.RoutePrefix))
         {
             if (context.Request.Path.Value?.EndsWith(
-                    "/administrative-state",
+                    CmsEntitiesRoutes.AdministrativeStateSuffix,
                     StringComparison.OrdinalIgnoreCase) == true)
             {
                 return (

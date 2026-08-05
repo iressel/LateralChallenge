@@ -2,56 +2,48 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using CmsSync.Api.Contracts.Entities;
+using CmsSync.Api.Entities;
 using CmsSync.Api.Errors;
 using CmsSync.Application.Abstractions;
 using CmsSync.Application.AdministrativeState;
 using CmsSync.Application.EntityQueries;
 using CmsSync.Infrastructure.Authentication;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
-namespace CmsSync.Api.Entities;
+namespace CmsSync.Api.Controllers;
 
-public static class CmsEntitiesEndpoint
+[ApiController]
+[Route(CmsEntitiesRoutes.RouteTemplate)]
+[Authorize(Policy = AuthenticationConstants.ConsumerAccessPolicy)]
+public sealed class CmsEntitiesController : ControllerBase
 {
-    public const string RoutePrefix = "/api/entities";
-
     private static readonly JsonSerializerOptions AdministrativeStateRequestJsonOptions = new()
     {
         PropertyNameCaseInsensitive = false,
     };
 
-    public static RouteGroupBuilder MapCmsEntities(this IEndpointRouteBuilder endpoints)
+    private readonly ICmsEntityQueries _entityQueries;
+    private readonly IAdministrativeStateService _administrativeStateService;
+
+    public CmsEntitiesController(
+        ICmsEntityQueries entityQueries,
+        IAdministrativeStateService administrativeStateService)
     {
-        ArgumentNullException.ThrowIfNull(endpoints);
-
-        var group = endpoints.MapGroup(RoutePrefix)
-            .RequireAuthorization(AuthenticationConstants.ConsumerAccessPolicy);
-
-        group.MapGet(string.Empty, ListAsync)
-            .Produces<CmsEntityListResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
-
-        group.MapGet("/{entityId}", FindByIdAsync)
-            .Produces<CmsEntityResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
-
-        group.MapPut("/{entityId}/administrative-state", SetAdministrativeStateAsync)
-            .RequireAuthorization(AuthenticationConstants.AdministratorAccessPolicy)
-            .Produces<CmsAdministrativeStateResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .ProducesProblem(StatusCodes.Status500InternalServerError);
-
-        return group;
+        _entityQueries = entityQueries ?? throw new ArgumentNullException(nameof(entityQueries));
+        _administrativeStateService = administrativeStateService
+            ?? throw new ArgumentNullException(nameof(administrativeStateService));
     }
 
-    private static async Task<IResult> ListAsync(
-        HttpContext context,
-        ICmsEntityQueries entityQueries)
+    [HttpGet]
+    [ProducesResponseType(typeof(CmsEntityListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IResult> ListEntitiesAsync()
     {
+        var context = HttpContext;
+
         if (!TryReadPageSize(context.Request, out var pageSize))
         {
             return SafeProblemDetails.Create(
@@ -66,7 +58,7 @@ public static class CmsEntitiesEndpoint
             pageSize,
             ReadAfterEntityId(context.Request),
             ResolveVisibility(context));
-        var page = await entityQueries.ListAsync(query, context.RequestAborted);
+        var page = await _entityQueries.ListAsync(query, context.RequestAborted);
         var responseItems = page.Items.Select(CreateResponse).ToArray();
 
         return Results.Ok(new CmsEntityListResponse(
@@ -75,13 +67,16 @@ public static class CmsEntitiesEndpoint
             page.NextCursor));
     }
 
-    private static async Task<IResult> FindByIdAsync(
-        string entityId,
-        HttpContext context,
-        ICmsEntityQueries entityQueries)
+    [HttpGet("{entityId}")]
+    [ProducesResponseType(typeof(CmsEntityResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    public async Task<IResult> GetEntityByIdAsync(string entityId)
     {
+        var context = HttpContext;
         var query = new CmsEntityDetailQuery(entityId, ResolveVisibility(context));
-        var entity = await entityQueries.FindByIdAsync(query, context.RequestAborted);
+        var entity = await _entityQueries.FindByIdAsync(query, context.RequestAborted);
 
         if (entity is null)
         {
@@ -96,29 +91,18 @@ public static class CmsEntitiesEndpoint
         return Results.Ok(CreateResponse(entity));
     }
 
-    private static bool TryReadPageSize(HttpRequest request, out int pageSize)
+    [HttpPut("{entityId}/administrative-state")]
+    [Authorize(Policy = AuthenticationConstants.AdministratorAccessPolicy)]
+    [ProducesResponseType(typeof(CmsAdministrativeStateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IResult> SetAdministrativeStateAsync(string entityId)
     {
-        pageSize = CmsEntityQueryLimits.DefaultPageSize;
-
-        if (!request.Query.TryGetValue("pageSize", out var suppliedValues))
-        {
-            return true;
-        }
-
-        return suppliedValues.Count == 1 &&
-               int.TryParse(
-                   suppliedValues[0],
-                   NumberStyles.None,
-                   CultureInfo.InvariantCulture,
-                   out pageSize) &&
-               pageSize is >= CmsEntityQueryLimits.MinimumPageSize and <= CmsEntityQueryLimits.MaximumPageSize;
-    }
-
-    private static async Task<IResult> SetAdministrativeStateAsync(
-        string entityId,
-        HttpContext context,
-        IAdministrativeStateService administrativeStateService)
-    {
+        var context = HttpContext;
         CmsAdministrativeStateRequest? request;
 
         try
@@ -145,7 +129,7 @@ public static class CmsEntitiesEndpoint
             throw new InvalidOperationException("The authenticated administrator has no subject identifier.");
         }
 
-        var result = await administrativeStateService.SetAsync(
+        var result = await _administrativeStateService.SetAsync(
             entityId,
             request.Disabled,
             administratorSubject,
@@ -166,6 +150,24 @@ public static class CmsEntitiesEndpoint
             result.AdministrativeDisabled,
             result.AdministrativeStateChangedAtUtc,
             result.AdministrativeStateChangedBy));
+    }
+
+    private static bool TryReadPageSize(HttpRequest request, out int pageSize)
+    {
+        pageSize = CmsEntityQueryLimits.DefaultPageSize;
+
+        if (!request.Query.TryGetValue("pageSize", out var suppliedValues))
+        {
+            return true;
+        }
+
+        return suppliedValues.Count == 1 &&
+               int.TryParse(
+                   suppliedValues[0],
+                   NumberStyles.None,
+                   CultureInfo.InvariantCulture,
+                   out pageSize) &&
+               pageSize is >= CmsEntityQueryLimits.MinimumPageSize and <= CmsEntityQueryLimits.MaximumPageSize;
     }
 
     private static IResult CreateInvalidAdministrativeStateRequest(HttpContext context)
