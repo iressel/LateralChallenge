@@ -6,6 +6,7 @@ using Xunit;
 
 namespace CmsSync.IntegrationTests.Persistence.Model;
 
+[Trait("Category", "SqlServer")]
 public sealed class CmsWriteModelTests
 {
     [Fact]
