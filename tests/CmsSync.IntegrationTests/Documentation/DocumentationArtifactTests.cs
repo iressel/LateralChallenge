@@ -365,12 +365,22 @@ public sealed class DocumentationArtifactTests
     }
 
     [Fact]
-    public void TasksFileKeepsT017CheckedAndT018Unchecked()
+    public void TasksFileShowsT017AndT018Completed()
     {
         var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
 
         Assert.Contains("- [x] **T017", tasks, StringComparison.Ordinal);
-        Assert.Contains("- [ ] **T018", tasks, StringComparison.Ordinal);
+        Assert.Contains("- [x] **T018", tasks, StringComparison.Ordinal);
+        Assert.DoesNotContain("- [ ] **T018", tasks, StringComparison.Ordinal);
+
+        var t018Start = tasks.IndexOf("- [x] **T018", StringComparison.Ordinal);
+        Assert.True(t018Start >= 0, "The T018 task line was not found.");
+
+        var section18Heading = tasks.IndexOf("\n## 18. Requirement traceability", t018Start, StringComparison.Ordinal);
+        Assert.True(section18Heading > t018Start, "The Section 18 heading was not found after T018.");
+
+        var t018Block = tasks[t018Start..section18Heading];
+        Assert.Contains("Completion evidence (", t018Block, StringComparison.Ordinal);
     }
 
     private static void AssertPropertyNames(JsonElement value, params string[] expectedPropertyNames)
