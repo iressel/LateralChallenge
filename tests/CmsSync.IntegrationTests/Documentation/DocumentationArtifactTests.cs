@@ -365,13 +365,15 @@ public sealed class DocumentationArtifactTests
     }
 
     [Fact]
-    public void TasksFileKeepsT017CheckedAndT018Unchecked()
+    public void TasksFileShowsT017AndT018Completed()
     {
         var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
+        var t018Block = ExtractTaskBlock(tasks, "T018");
 
         Assert.Contains("- [x] **T017", tasks, StringComparison.Ordinal);
-        Assert.Contains("- [ ] **T018", tasks, StringComparison.Ordinal);
-        Assert.DoesNotContain("- [x] **T018", tasks, StringComparison.Ordinal);
+        Assert.Contains("- [x] **T018", tasks, StringComparison.Ordinal);
+        Assert.DoesNotContain("- [ ] **T018", tasks, StringComparison.Ordinal);
+        Assert.Contains("Completion evidence (", t018Block, StringComparison.Ordinal);
     }
 
     private static void AssertPropertyNames(JsonElement value, params string[] expectedPropertyNames)
@@ -466,5 +468,24 @@ public sealed class DocumentationArtifactTests
         Assert.True(fenceEnd >= 0, "Closing fenced block delimiter was not found.");
 
         return markdown[contentStart..fenceEnd].Trim();
+    }
+
+    private static string ExtractTaskBlock(string tasks, string taskId)
+    {
+        var marker = "- [";
+        var taskHeader = $"**{taskId} ";
+        var startIndex = tasks.IndexOf(taskHeader, StringComparison.Ordinal);
+        Assert.True(startIndex >= 0, $"Task block was not found for {taskId}.");
+
+        var previousMarkerIndex = tasks.LastIndexOf(marker, startIndex, StringComparison.Ordinal);
+        Assert.True(previousMarkerIndex >= 0, $"Task line prefix was not found for {taskId}.");
+
+        var nextTaskIndex = tasks.IndexOf("\n- [", startIndex, StringComparison.Ordinal);
+        if (nextTaskIndex < 0)
+        {
+            nextTaskIndex = tasks.Length;
+        }
+
+        return tasks[previousMarkerIndex..nextTaskIndex];
     }
 }
