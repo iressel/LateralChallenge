@@ -49,8 +49,39 @@ public sealed class DocumentationArtifactTests
             var normalizedTarget = Uri.UnescapeDataString(target.Replace('/', Path.DirectorySeparatorChar));
             var fullPath = Path.GetFullPath(Path.Combine(RepositoryRoot, normalizedTarget));
 
-            Assert.StartsWith(RepositoryRoot, fullPath, StringComparison.Ordinal);
+            Assert.True(
+                IsPathWithinRepository(RepositoryRoot, fullPath),
+                $"README link target must resolve inside the repository: {rawTarget}");
             Assert.True(File.Exists(fullPath), $"README link target was not found: {rawTarget}");
+        }
+    }
+
+    [Fact]
+    public void RepositoryContainmentHelperAcceptsRootAndChildrenAndRejectsTraversal()
+    {
+        Assert.True(IsPathWithinRepository(RepositoryRoot, RepositoryRoot));
+
+        var childPath = Path.Combine(RepositoryRoot, "README.md");
+        Assert.True(IsPathWithinRepository(RepositoryRoot, childPath));
+
+        var trimmedRepositoryRoot = RepositoryRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var repositoryParent = Directory.GetParent(trimmedRepositoryRoot);
+        Assert.NotNull(repositoryParent);
+
+        var repositoryName = Path.GetFileName(trimmedRepositoryRoot);
+        var siblingPath = Path.Combine(repositoryParent!.FullName, repositoryName + "-sibling", "README.md");
+        Assert.False(IsPathWithinRepository(RepositoryRoot, siblingPath));
+
+        var parentPath = Path.Combine(repositoryParent.FullName, "README.md");
+        Assert.False(IsPathWithinRepository(RepositoryRoot, parentPath));
+
+        if (OperatingSystem.IsWindows())
+        {
+            var alternateCasingRoot = FlipPathLetterCasing(trimmedRepositoryRoot);
+            Assert.False(string.Equals(trimmedRepositoryRoot, alternateCasingRoot, StringComparison.Ordinal));
+
+            var alternateCasingChild = Path.Combine(alternateCasingRoot, "README.md");
+            Assert.True(IsPathWithinRepository(RepositoryRoot, alternateCasingChild));
         }
     }
 
@@ -352,6 +383,49 @@ public sealed class DocumentationArtifactTests
     private static string ReadRepositoryFile(string relativePath)
     {
         return File.ReadAllText(Path.Combine(RepositoryRoot, relativePath));
+    }
+
+    private static bool IsPathWithinRepository(string repositoryRoot, string fullPath)
+    {
+        var relativePath = Path.GetRelativePath(repositoryRoot, fullPath);
+
+        if (Path.IsPathRooted(relativePath))
+        {
+            return false;
+        }
+
+        if (string.Equals(relativePath, "..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+            relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string FlipPathLetterCasing(string path)
+    {
+        var characters = path.ToCharArray();
+
+        for (var index = 0; index < characters.Length; index++)
+        {
+            var character = characters[index];
+            if (!char.IsLetter(character))
+            {
+                continue;
+            }
+
+            characters[index] = char.IsUpper(character)
+                ? char.ToLowerInvariant(character)
+                : char.ToUpperInvariant(character);
+        }
+
+        return new string(characters);
     }
 
     private static string FindRepositoryRoot(string startingPath)
