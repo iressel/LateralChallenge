@@ -258,11 +258,11 @@ public sealed class FinalReviewArtifactTests
     }
 
     [Fact]
-    public void AllTasksThroughT018AreCheckedAndContainCompletionEvidence()
+    public void CompletedTasksThroughT017ContainCompletionEvidenceAndT018IsUnchecked()
     {
         var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
 
-        for (var index = 1; index <= 18; index++)
+        for (var index = 1; index <= 17; index++)
         {
             var taskId = $"T{index:000}";
             var taskBlock = ExtractTaskBlock(tasks, taskId);
@@ -272,28 +272,9 @@ public sealed class FinalReviewArtifactTests
         }
 
         var t018Block = ExtractTaskBlock(tasks, "T018");
-        Assert.DoesNotContain("- [ ] **T018", tasks, StringComparison.Ordinal);
-
-        var requiredT018Evidence = new[]
-        {
-            "PR: #17",
-            "audited head: 7ed7b12eadd8ce8395e9d4a3aa563dd5b5a4bb46",
-            "run number: 14",
-            "run id: 31003009542",
-            "artifact id: 8929165577",
-            "sha256:be13f3d8958160c960c0e6b03d13e2e9d1ce9e0f9c328cc1c6aae4ce1c036066",
-            "41/41 SQL Server tests",
-            "252/252 unit tests",
-            "321/321 integration tests",
-            "AC-001 through AC-057",
-            "all 57 acceptance criteria",
-            "external CMS questions in spec Section 20 remain unresolved by design",
-        };
-
-        foreach (var evidenceMarker in requiredT018Evidence)
-        {
-            Assert.Contains(evidenceMarker, t018Block, StringComparison.Ordinal);
-        }
+        Assert.Contains("- [ ] **T018", t018Block, StringComparison.Ordinal);
+        Assert.DoesNotContain("- [x] **T018", t018Block, StringComparison.Ordinal);
+        Assert.DoesNotContain("Completion evidence (", t018Block, StringComparison.Ordinal);
     }
 
     [Fact]

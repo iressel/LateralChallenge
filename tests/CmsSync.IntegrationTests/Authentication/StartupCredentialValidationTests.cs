@@ -1,5 +1,7 @@
+using System.Reflection;
 using CmsSync.Infrastructure.Authentication;
 using CmsSync.IntegrationTests.TestHost;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace CmsSync.IntegrationTests.Authentication;
@@ -154,10 +156,30 @@ public sealed class StartupCredentialValidationTests
         }
 
         Assert.NotNull(startupException);
-        var messages = ReadExceptionMessages(startupException);
-        Assert.Contains(AuthenticationConstants.CredentialSection, messages, StringComparison.Ordinal);
+        var exceptionGraph = EnumerateExceptionGraph(startupException);
+        var messageSummary = string.Join(
+            Environment.NewLine,
+            exceptionGraph.Select(exception => exception.Message));
+        var typeSummary = string.Join(
+            ", ",
+            exceptionGraph
+                .Select(exception => exception.GetType().FullName ?? exception.GetType().Name)
+                .Distinct(StringComparer.Ordinal));
+
         Assert.False(
-            sensitiveValues.Any(value => messages.Contains(value, StringComparison.Ordinal)),
+            exceptionGraph.All(exception => exception is ObjectDisposedException),
+            $"Startup validation cannot be proven from ObjectDisposedException alone. Types: {typeSummary}");
+        Assert.Contains(
+            AuthenticationConstants.CredentialSection,
+            messageSummary,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            exceptionGraph,
+            exception => exception is OptionsValidationException);
+        Assert.False(
+            sensitiveValues.Any(value =>
+                !string.IsNullOrWhiteSpace(value) &&
+                messageSummary.Contains(value, StringComparison.Ordinal)),
             "A startup validation failure exposed authentication material.");
     }
 
@@ -177,15 +199,50 @@ public sealed class StartupCredentialValidationTests
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    private static string ReadExceptionMessages(Exception exception)
+    private static List<Exception> EnumerateExceptionGraph(Exception rootException)
     {
-        var messages = new List<string>();
+        var graph = new List<Exception>();
+        var pending = new Queue<Exception>();
+        var visited = new HashSet<Exception>(ReferenceEqualityComparer.Instance);
 
-        for (Exception? current = exception; current is not null; current = current.InnerException)
+        pending.Enqueue(rootException);
+
+        while (pending.Count > 0)
         {
-            messages.Add(current.Message);
+            var current = pending.Dequeue();
+
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            graph.Add(current);
+
+            if (current.InnerException is not null)
+            {
+                pending.Enqueue(current.InnerException);
+            }
+
+            if (current is AggregateException aggregateException)
+            {
+                foreach (var innerException in aggregateException.InnerExceptions)
+                {
+                    pending.Enqueue(innerException);
+                }
+            }
+
+            if (current is ReflectionTypeLoadException typeLoadException)
+            {
+                foreach (var loaderException in typeLoadException.LoaderExceptions)
+                {
+                    if (loaderException is not null)
+                    {
+                        pending.Enqueue(loaderException);
+                    }
+                }
+            }
         }
 
-        return string.Join(Environment.NewLine, messages);
+        return graph;
     }
 }
