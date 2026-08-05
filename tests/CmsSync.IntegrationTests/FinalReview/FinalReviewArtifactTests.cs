@@ -35,6 +35,21 @@ public sealed class FinalReviewArtifactTests
         ".yml",
     ];
 
+    private static readonly string[] ExpectedIncludedSourceFiles =
+    [
+        "Included.cs",
+        "src/Nested.cs",
+    ];
+
+    private static readonly string[] ExpectedNestedSourceFiles =
+    [
+        "src/Nested.cs",
+    ];
+
+    private static readonly HashSet<string> ExcludedRepositoryDirectoryNames = new(
+        [".git", "bin", "obj"],
+        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
     private static readonly (string ApiName, string Pattern)[] ProhibitedAutoMigrationInvocationPatterns =
     [
         ("Database.Migrate(", @"\bDatabase\s*\.\s*Migrate\s*\("),
@@ -415,6 +430,109 @@ public sealed class FinalReviewArtifactTests
     }
 
     [Fact]
+    public void RepositoryFileEnumerationSkipsExcludedDirectoriesBeforeDescentAndRemainsDeterministic()
+    {
+        var temporaryRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"FinalReviewArtifactTests-{Guid.NewGuid():N}");
+        var cleanupExecuted = false;
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(temporaryRoot, "src"));
+            Directory.CreateDirectory(Path.Combine(temporaryRoot, ".git"));
+            Directory.CreateDirectory(Path.Combine(temporaryRoot, "src", "bin"));
+            Directory.CreateDirectory(Path.Combine(temporaryRoot, "src", "obj"));
+
+            File.WriteAllText(Path.Combine(temporaryRoot, "Included.cs"), "class Included {}\n");
+            File.WriteAllText(Path.Combine(temporaryRoot, "src", "Nested.cs"), "class Nested {}\n");
+            File.WriteAllText(Path.Combine(temporaryRoot, ".git", "Hidden.cs"), "class Hidden {}\n");
+            File.WriteAllText(Path.Combine(temporaryRoot, "src", "bin", "Generated.cs"), "class Generated {}\n");
+            File.WriteAllText(Path.Combine(temporaryRoot, "src", "obj", "Generated.cs"), "class Generated {}\n");
+
+            var firstRun = EnumerateRepositoryFilesFromRoot(temporaryRoot, ".cs").ToArray();
+            var secondRun = EnumerateRepositoryFilesFromRoot(temporaryRoot, ".cs").ToArray();
+            var prefixedRun = EnumerateRepositoryFilesFromRoot(temporaryRoot, "src/", ".cs").ToArray();
+
+            Assert.Equal(ExpectedIncludedSourceFiles, firstRun);
+            Assert.Equal(firstRun, secondRun);
+            Assert.Equal(ExpectedNestedSourceFiles, prefixedRun);
+            Assert.DoesNotContain(firstRun, path => path.StartsWith(".git/", StringComparison.Ordinal));
+            Assert.DoesNotContain(firstRun, path => path.Contains("/bin/", StringComparison.Ordinal));
+            Assert.DoesNotContain(firstRun, path => path.Contains("/obj/", StringComparison.Ordinal));
+        }
+        finally
+        {
+            cleanupExecuted = true;
+
+            if (Directory.Exists(temporaryRoot))
+            {
+                Directory.Delete(temporaryRoot, recursive: true);
+            }
+        }
+
+        Assert.True(cleanupExecuted);
+    }
+
+    [Fact]
+    public void RepositoryContainmentAndTokenValidationRejectTraversalAndSharedPrefixSiblings()
+    {
+        var parentDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"FinalReviewContainmentTests-{Guid.NewGuid():N}");
+        var repositoryRoot = Path.Combine(parentDirectory, "LateralChallenge");
+        var siblingDirectory = Path.Combine(parentDirectory, "LateralChallenge-sibling");
+        var cleanupExecuted = false;
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(repositoryRoot, "docs", "nested"));
+            Directory.CreateDirectory(siblingDirectory);
+
+            File.WriteAllText(Path.Combine(repositoryRoot, "README.md"), "readme\n");
+            File.WriteAllText(Path.Combine(repositoryRoot, "docs", "nested", "Guide.md"), "guide\n");
+            File.WriteAllText(Path.Combine(repositoryRoot, "docs", "documentation..archive.md"), "archive\n");
+            File.WriteAllText(Path.Combine(siblingDirectory, "Sibling.md"), "outside\n");
+
+            Assert.True(IsPathContainedInRepository(repositoryRoot, repositoryRoot));
+            Assert.True(IsPathContainedInRepository(repositoryRoot, Path.Combine(repositoryRoot, "README.md")));
+            Assert.True(IsPathContainedInRepository(repositoryRoot, Path.Combine(repositoryRoot, "docs", "nested", "Guide.md")));
+            Assert.False(IsPathContainedInRepository(repositoryRoot, parentDirectory));
+            Assert.False(IsPathContainedInRepository(repositoryRoot, Path.Combine(siblingDirectory, "Sibling.md")));
+
+            Assert.True(PathExistsInRepository(repositoryRoot, "README.md"));
+            Assert.True(PathExistsInRepository(repositoryRoot, "docs/nested/Guide.md"));
+            Assert.False(PathExistsInRepository(repositoryRoot, "docs/../../LateralChallenge-sibling/Sibling.md"));
+            Assert.False(PathExistsInRepository(repositoryRoot, Path.Combine(siblingDirectory, "Sibling.md")));
+
+            Assert.False(LooksLikeRepositoryPathToken("docs/../../LateralChallenge-sibling/Sibling.md"));
+            Assert.False(LooksLikeRepositoryPathToken("docs\\..\\..\\LateralChallenge-sibling\\Sibling.md"));
+            Assert.True(LooksLikeRepositoryPathToken("docs/documentation..archive.md"));
+            Assert.True(PathExistsInRepository(repositoryRoot, "docs/documentation..archive.md"));
+
+            if (OperatingSystem.IsWindows())
+            {
+                var alternateCaseRepositoryRoot = InvertLetterCasing(repositoryRoot);
+                var alternateCaseChildPath = Path.Combine(alternateCaseRepositoryRoot, "docs", "nested", "Guide.md");
+
+                Assert.True(IsPathContainedInRepository(repositoryRoot, alternateCaseRepositoryRoot));
+                Assert.True(IsPathContainedInRepository(repositoryRoot, alternateCaseChildPath));
+            }
+        }
+        finally
+        {
+            cleanupExecuted = true;
+
+            if (Directory.Exists(parentDirectory))
+            {
+                Directory.Delete(parentDirectory, recursive: true);
+            }
+        }
+
+        Assert.True(cleanupExecuted);
+    }
+
+    [Fact]
     public void ContainerAndCiArtifactsPreserveImmutablePinsAndPolicyRules()
     {
         var compose = ReadRepositoryFile("compose.yaml");
@@ -646,13 +764,15 @@ public sealed class FinalReviewArtifactTests
     {
         if (string.IsNullOrWhiteSpace(token) ||
             token.Contains("://", StringComparison.Ordinal) ||
-            token.StartsWith("../", StringComparison.Ordinal) ||
-            token.StartsWith("..\\", StringComparison.Ordinal))
+            Path.IsPathRooted(token) ||
+            ContainsParentTraversalSegment(token))
         {
             return false;
         }
 
-        if (token.Contains('/', StringComparison.Ordinal))
+        var normalizedToken = NormalizePathSeparators(token);
+
+        if (normalizedToken.Contains('/', StringComparison.Ordinal))
         {
             return true;
         }
@@ -663,15 +783,22 @@ public sealed class FinalReviewArtifactTests
 
     private static bool PathExistsInRepository(string relativePath)
     {
+        return PathExistsInRepository(RepositoryRoot, relativePath);
+    }
+
+    private static bool PathExistsInRepository(string repositoryRoot, string relativePath)
+    {
         if (Path.IsPathRooted(relativePath))
         {
             return false;
         }
 
-        var normalizedRelativePath = relativePath.Replace('/', Path.DirectorySeparatorChar);
-        var fullPath = Path.GetFullPath(Path.Combine(RepositoryRoot, normalizedRelativePath));
+        var normalizedRelativePath = relativePath
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(Path.Combine(repositoryRoot, normalizedRelativePath));
 
-        if (!fullPath.StartsWith(RepositoryRoot, StringComparison.OrdinalIgnoreCase))
+        if (!IsPathContainedInRepository(repositoryRoot, fullPath))
         {
             return false;
         }
@@ -776,6 +903,56 @@ public sealed class FinalReviewArtifactTests
         return tasks[previousMarkerIndex..nextTaskIndex];
     }
 
+    private static bool ContainsParentTraversalSegment(string token)
+    {
+        var normalizedToken = NormalizePathSeparators(token);
+        var segments = normalizedToken.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        return segments.Any(segment => string.Equals(segment, "..", StringComparison.Ordinal));
+    }
+
+    private static bool IsPathContainedInRepository(string repositoryRoot, string candidateFullPath)
+    {
+        var relativePath = Path.GetRelativePath(repositoryRoot, candidateFullPath);
+
+        if (Path.IsPathRooted(relativePath))
+        {
+            return false;
+        }
+
+        if (string.Equals(relativePath, "..", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return !relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+               !relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal);
+    }
+
+    private static string InvertLetterCasing(string value)
+    {
+        var characters = value.ToCharArray();
+
+        for (var index = 0; index < characters.Length; index++)
+        {
+            var character = characters[index];
+
+            if (char.IsLetter(character))
+            {
+                characters[index] = char.IsUpper(character)
+                    ? char.ToLowerInvariant(character)
+                    : char.ToUpperInvariant(character);
+            }
+        }
+
+        return new string(characters);
+    }
+
+    private static string NormalizePathSeparators(string path)
+    {
+        return path.Replace('\\', '/');
+    }
+
     private static string ExtractSection(string markdown, string heading, string nextHeading)
     {
         var headingIndex = markdown.IndexOf(heading, StringComparison.Ordinal);
@@ -789,17 +966,62 @@ public sealed class FinalReviewArtifactTests
 
     private static IEnumerable<string> EnumerateRepositoryFiles(string requiredSuffix)
     {
-        return Directory.EnumerateFiles(RepositoryRoot, "*", SearchOption.AllDirectories)
-            .Select(path => path.Replace('\\', '/'))
-            .Where(path => path.EndsWith(requiredSuffix, StringComparison.Ordinal))
-            .Where(path => !path.Contains("/bin/", StringComparison.Ordinal))
-            .Where(path => !path.Contains("/obj/", StringComparison.Ordinal))
-            .Select(path => path[(RepositoryRoot.Length + 1)..]);
+        return EnumerateRepositoryFilesFromRoot(RepositoryRoot, requiredSuffix);
+    }
+
+    private static IEnumerable<string> EnumerateRepositoryFilesFromRoot(
+        string repositoryRoot,
+        string requiredSuffix)
+    {
+        return EnumerateRepositoryFilesRecursive(repositoryRoot, repositoryRoot)
+            .Where(path => path.EndsWith(requiredSuffix, StringComparison.Ordinal));
+    }
+
+    private static IEnumerable<string> EnumerateRepositoryFilesRecursive(
+        string repositoryRoot,
+        string currentDirectory)
+    {
+        var files = Directory.EnumerateFiles(currentDirectory)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var filePath in files)
+        {
+            var relativePath = Path.GetRelativePath(repositoryRoot, filePath);
+            yield return NormalizePathSeparators(relativePath);
+        }
+
+        var childDirectories = Directory.EnumerateDirectories(currentDirectory)
+            .Select(path => new DirectoryInfo(path))
+            .OrderBy(directory => directory.Name, StringComparer.Ordinal)
+            .ThenBy(directory => directory.FullName, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var childDirectory in childDirectories)
+        {
+            if (ExcludedRepositoryDirectoryNames.Contains(childDirectory.Name))
+            {
+                continue;
+            }
+
+            foreach (var relativePath in EnumerateRepositoryFilesRecursive(repositoryRoot, childDirectory.FullName))
+            {
+                yield return relativePath;
+            }
+        }
     }
 
     private static IEnumerable<string> EnumerateRepositoryFiles(string prefix, string requiredSuffix)
     {
-        return EnumerateRepositoryFiles(requiredSuffix)
+        return EnumerateRepositoryFilesFromRoot(RepositoryRoot, prefix, requiredSuffix);
+    }
+
+    private static IEnumerable<string> EnumerateRepositoryFilesFromRoot(
+        string repositoryRoot,
+        string prefix,
+        string requiredSuffix)
+    {
+        return EnumerateRepositoryFilesFromRoot(repositoryRoot, requiredSuffix)
             .Where(path => path.StartsWith(prefix, StringComparison.Ordinal));
     }
 
