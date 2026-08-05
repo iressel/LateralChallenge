@@ -7,65 +7,81 @@ This repository implements the CMS event ingestion and entity visibility challen
 - Source-of-truth requirements: [specs/cms-event-ingestion/spec.md](specs/cms-event-ingestion/spec.md)
 - Architecture and implementation plan: [specs/cms-event-ingestion/plan.md](specs/cms-event-ingestion/plan.md)
 - Execution checklist and task boundaries: [specs/cms-event-ingestion/tasks.md](specs/cms-event-ingestion/tasks.md)
-- Agent guardrails for this repository: [AGENTS.md](AGENTS.md)
+- Repository guardrails: [AGENTS.md](AGENTS.md)
 
-This README documents the implemented behavior and operational constraints from the current code and tests.
+This README documents implemented behavior from current source and tests. It does not replace Section 18 or Section 20 of the specification.
 
-## 2. Implemented stack and constraints
+## 2. Implemented stack and boundaries
 
 - Runtime: .NET 10
-- API: ASP.NET Core minimal APIs
-- Persistence: EF Core 10 with SQL Server only
+- API shape: ASP.NET Core minimal endpoints
+- Persistence: EF Core 10 with Microsoft SQL Server only
 - Solution file: [LateralChallenge.sln](LateralChallenge.sln)
-- Production database provider: Microsoft SQL Server only
-- Required app connection strings:
-	- `ConnectionStrings:WriteDatabase`
-	- `ConnectionStrings:ReadDatabase`
+- Production write/read boundary: separate write and read connection strings
+- No automatic startup migration path in normal API startup
 
-## 3. Prerequisites
+## 3. Required configuration and secret handling
 
-- Windows/macOS/Linux with .NET SDK from [global.json](global.json)
-- Docker Engine and Docker Compose
-- Supported local Compose path requires an x86-64 Docker host
+Required environment-variable keys include:
 
-For platform-specific behavior and Apple Silicon constraints, see [docs/container-development.md](docs/container-development.md).
-
-## 4. Secrets and local configuration
-
-1. Copy [.env.example](.env.example) to `.env`.
-2. Replace every placeholder with local secrets that stay out of source control.
-3. Keep all four SQL passwords distinct and strong.
-4. Keep actor usernames distinct.
-5. Use GUID `D` format passwords for CMS, Consumer, and Administrator credentials.
-
-Configuration keys used by Compose and runtime:
-
-- `MSSQL_SA_PASSWORD`
-- `MIGRATION_SQL_PASSWORD`
-- `WRITE_SQL_PASSWORD`
-- `READ_SQL_PASSWORD`
+- `ConnectionStrings__WriteDatabase`
+- `ConnectionStrings__ReadDatabase`
 - `Authentication__Credentials__Cms__Username`
 - `Authentication__Credentials__Cms__Password`
 - `Authentication__Credentials__Consumer__Username`
 - `Authentication__Credentials__Consumer__Password`
 - `Authentication__Credentials__Administrator__Username`
 - `Authentication__Credentials__Administrator__Password`
-- `SQL_SERVER_PORT` (optional)
-- `CMS_API_PORT` (optional)
-- `SQL_SERVER_IMAGE` (optional override, keep default pinned value)
 
-## 5. Supported local startup (x86-64 Compose)
+Credential rules enforced by configuration validation and tests:
 
-Compose artifacts:
+- CMS username length must be 10 through 20 characters.
+- CMS, Consumer, and Administrator usernames are distinct.
+- CMS, Consumer, and Administrator passwords are distinct GUID `D` format values.
+- Basic Authentication requires HTTPS outside Development.
+- Real credentials never belong in source control.
 
-- [compose.yaml](compose.yaml)
-- [Dockerfile](Dockerfile)
+Container-local SQL secret keys:
+
+- `MSSQL_SA_PASSWORD`
+- `MIGRATION_SQL_PASSWORD`
+- `WRITE_SQL_PASSWORD`
+- `READ_SQL_PASSWORD`
+
+Copy [.env.example](.env.example) to `.env` for local development only, then replace placeholders with local secrets.
+
+## 4. SQL principal separation and migration boundaries
+
+Database initialization and migration assets:
+
+- [scripts/container/initialize-database.sql](scripts/container/initialize-database.sql)
 - [scripts/container/initialize-database.sh](scripts/container/initialize-database.sh)
 - [scripts/container/apply-migrations.sh](scripts/container/apply-migrations.sh)
 - [scripts/container/verify-migration.sh](scripts/container/verify-migration.sh)
 - [scripts/container/verify-read-only.sh](scripts/container/verify-read-only.sh)
 
-Run sequence:
+Principal separation:
+
+- `sa` is used only for local database initialization checks and setup.
+- `CmsSyncMigration` is the migration principal and applies migrations.
+- `CmsSyncWriter` is the API write-context principal.
+- `CmsSyncReader` is SELECT-only.
+
+Operational boundaries:
+
+- Normal API startup does not call `Database.Migrate`, `EnsureCreated`, or equivalent auto-migration behavior.
+- Production migrations require a separately authorized migration principal.
+- The API write identity must not receive migration permissions.
+
+## 5. Supported startup paths
+
+Compose and container artifacts:
+
+- [compose.yaml](compose.yaml)
+- [Dockerfile](Dockerfile)
+- [docs/container-development.md](docs/container-development.md)
+
+Supported local Compose path is x86-64:
 
 ```powershell
 docker compose config --quiet
@@ -74,27 +90,7 @@ docker compose up --build --wait
 docker compose ps
 ```
 
-Health probes:
-
-- `http://localhost:8080/health/live`
-- `http://localhost:8080/health/ready`
-
-Cleanup:
-
-```powershell
-docker compose down --remove-orphans
-docker compose down --volumes --remove-orphans
-```
-
-Deterministic clean-volume validation script:
-
-```powershell
-pwsh ./scripts/validate-container-setup.ps1
-```
-
-## 6. Optional API startup against an existing SQL Server
-
-When Compose is not your runtime path, provide all required configuration (connection strings and authentication credentials) by environment variables or local user-secrets, then run:
+Optional local API startup against an existing SQL Server:
 
 ```powershell
 dotnet restore LateralChallenge.sln --source https://api.nuget.org/v3/index.json
@@ -102,9 +98,14 @@ dotnet build LateralChallenge.sln --configuration Release --no-restore
 dotnet run --project src/CmsSync.Api/CmsSync.Api.csproj --configuration Release
 ```
 
-The API requires both `ConnectionStrings:WriteDatabase` and `ConnectionStrings:ReadDatabase`.
+Deterministic container validation and cleanup:
 
-## 7. Authentication and authorization contract
+```powershell
+pwsh ./scripts/validate-container-setup.ps1
+pwsh ./scripts/verify-container-cleanup.ps1
+```
+
+## 6. Authentication and authorization contract
 
 Implementation sources:
 
@@ -119,9 +120,9 @@ Schemes:
 
 Policies:
 
-- `CmsEvents` (CMS webhook)
-- `ConsumerAccess` (read endpoints)
-- `AdministratorAccess` (administrative disable endpoint)
+- `CmsEvents`
+- `ConsumerAccess`
+- `AdministratorAccess`
 
 Roles:
 
@@ -129,37 +130,36 @@ Roles:
 - `NormalConsumer`
 - `Administrator`
 
-Challenge/forbid behavior:
+Behavior:
 
-- Missing/malformed/invalid credentials for an endpoint scheme return `401` with `Basic realm="<scheme>"`.
-- Valid normal-consumer credentials on administrator-only endpoint return `403` with no challenge header.
-- Cross-scheme credentials return `401` (not `403`).
-- HTTPS redirection is enforced outside the Development environment.
+- Missing, malformed, or invalid credentials return `401` with `Basic realm="<scheme>"`.
+- Wrong-scheme credentials return `401` for the endpoint scheme.
+- A normal consumer on administrator-only operations returns `403` with no challenge.
+- Authentication failures and HTTPS redirects are protected with `Cache-Control: no-store`.
 
-## 8. CMS webhook endpoint contract
+## 7. CMS webhook request contract
 
-Endpoint:
+Endpoint and accepted media types:
 
 - `POST /cms/events`
-
-Accepted media types:
-
 - `application/json`
 - `application/*+json`
 
-Raw-array requirement:
+Request constraints:
 
-- Top-level JSON must be a raw array.
-- No `{ "events": [...] }` wrapper.
-
-Webhook event property names are case-sensitive. The external entity property is exactly `id`.
+- Top-level JSON must be a raw array of 1 through 50 items.
+- No `{ "events": [...] }` envelope.
+- Request limit: 16 MiB.
+- Per-versioned-event payload limit: 256 KiB.
+- Property names are case-sensitive.
+- Webhook entity property is exactly `id`; `entityId` is not accepted.
 
 ### Example: raw webhook array request
 
 ```json
 [
 	{
-		"eventId": "<choose-a-distinct-example-event-id-1>",
+		"eventId": "evt-0001",
 		"type": "Publish",
 		"id": "entity-ac057",
 		"version": 5,
@@ -170,7 +170,7 @@ Webhook event property names are case-sensitive. The external entity property is
 		}
 	},
 	{
-		"eventId": "<choose-a-distinct-example-event-id-2>",
+		"eventId": "evt-0002",
 		"type": "  unPublish  ",
 		"id": "entity-ac057",
 		"version": 6,
@@ -188,335 +188,306 @@ Webhook event property names are case-sensitive. The external entity property is
 ]
 ```
 
-The example intentionally mixes event-type casing and surrounding whitespace, and it shows both present and omitted `eventId` values.
+The request example intentionally mixes event-type casing and surrounding whitespace and shows both present and omitted `eventId` values.
 
-## 9. Webhook validation rules and limits
+## 8. Webhook response contract
 
-Implementation sources:
-
-- [src/CmsSync.Application/EventIngestion/CmsEventIngestionLimits.cs](src/CmsSync.Application/EventIngestion/CmsEventIngestionLimits.cs)
-- [src/CmsSync.Application/EventIngestion/EventValidator.cs](src/CmsSync.Application/EventIngestion/EventValidator.cs)
-- [src/CmsSync.Api/Webhook/CmsWebhookRequestSizeMiddleware.cs](src/CmsSync.Api/Webhook/CmsWebhookRequestSizeMiddleware.cs)
-
-Limits:
-
-- Request size: 16 MiB
-- Batch size: 1..50 events
-- Payload size (per versioned event): 256 KiB
-- Maximum JSON depth: 64
-- Identifier length (`id`, `eventId`): 1..200 characters
-
-Validation highlights:
-
-- `type` is trimmed and case-insensitively normalized to canonical `publish`, `unpublish`, or `delete`.
-- `entityId` is not accepted in the webhook request contract.
-- `timestamp` must include `Z` or explicit `+/-HH:MM` offset and at most 7 fractional digits.
-- `version` must be a positive integer for publish/unpublish.
-- `delete` must not include `version` or `payload`.
-- Duplicate JSON property names inside an event (including `payload`) make that item invalid.
-- Unknown event-envelope properties are ignored.
-
-## 10. Webhook responses, outcomes, and codes
-
-Response contract sources:
+Response contract source:
 
 - [src/CmsSync.Api/Contracts/CmsEvents/CmsEventBatchResponse.cs](src/CmsSync.Api/Contracts/CmsEvents/CmsEventBatchResponse.cs)
-- [src/CmsSync.Api/Contracts/CmsEvents/CmsEventResultResponse.cs](src/CmsSync.Api/Contracts/CmsEvents/CmsEventResultResponse.cs)
-- [src/CmsSync.Api/Contracts/CmsEvents/CmsEventSummaryResponse.cs](src/CmsSync.Api/Contracts/CmsEvents/CmsEventSummaryResponse.cs)
 
-`200 OK` response shape:
-
-- `batchId`
-- `results[]`
-	- `sequence`
-	- `eventId` (optional)
-	- `id` (optional)
-	- `outcome`
-	- `code`
-	- `generation` (optional)
-	- `resultingVersion` (optional)
-- `summary`
-	- `total`
-	- `applied`
-	- `duplicate`
-	- `equivalent`
-	- `stale`
-	- `invalid`
-	- `conflict`
-
-Outcome tokens:
-
-- `applied`
-- `duplicate`
-- `equivalent`
-- `stale`
-- `invalid`
-- `conflict`
-
-Common request-level Problem Details codes:
-
-- `REQUEST_TOO_LARGE`
-- `MALFORMED_JSON`
-- `INVALID_ENVELOPE`
-- `BATCH_SIZE_OUT_OF_RANGE`
-- `UNSUPPORTED_MEDIA_TYPE`
-- `DEPENDENCY_UNAVAILABLE`
-- `UNEXPECTED_PROCESSING_FAILURE`
-
-Item-level validation codes:
-
-- `EVENT_MUST_BE_OBJECT`
-- `DUPLICATE_PROPERTY_NAME`
-- `EVENT_TYPE_REQUIRED`
-- `EVENT_TYPE_INVALID`
-- `ENTITY_ID_REQUIRED`
-- `ENTITY_ID_INVALID`
-- `EVENT_ID_INVALID`
-- `TIMESTAMP_REQUIRED`
-- `TIMESTAMP_INVALID`
-- `VERSION_REQUIRED`
-- `VERSION_INVALID`
-- `VERSION_NOT_ALLOWED`
-- `PAYLOAD_REQUIRED`
-- `PAYLOAD_MUST_BE_OBJECT`
-- `PAYLOAD_TOO_LARGE`
-- `PAYLOAD_NOT_ALLOWED`
-
-Replay and conflict processing codes:
-
-- `EXACT_DUPLICATE`
-- `EVENT_ID_CONTENT_CONFLICT`
-
-Domain transition codes:
-
-- `ENTITY_CREATED`
-- `ENTITY_RECREATED`
-- `VERSION_ADVANCED`
-- `SAME_VERSION_APPLIED`
-- `VERSION_STALE`
-- `EVENT_TIMESTAMP_STALE`
-- `STATE_EQUIVALENT`
-- `PAYLOAD_CONFLICT`
-- `PUBLICATION_STATUS_CONFLICT`
-- `TOMBSTONE_BLOCKED`
-- `TOMBSTONE_CREATED`
-- `TOMBSTONE_STALE`
-- `TOMBSTONE_EQUIVALENT`
-- `TOMBSTONE_ADVANCED`
-- `DELETE_STALE`
-- `DELETE_CONFLICT`
-- `ENTITY_DELETED`
-- `GENERATION_EXHAUSTED`
-
-## 11. HTTP status precedence and retry semantics
-
-Status precedence for webhook requests:
-
-1. Request-size gate (`413`)
-2. Authentication/authorization (`401`/`403`)
-3. Media-type and top-level JSON envelope validation (`415`/`400`)
-4. Item processing (`200` per-item outcomes or `500`/`503` on incomplete batch processing)
-
-Processing and retry behavior:
-
-- Valid batch items run sequentially in request order.
-- Each item runs in its own SQL transaction.
-- Earlier committed items are not rolled back by a later failure.
-- On dependency exhaustion, the endpoint returns `503`.
-- On unexpected processing failure, the endpoint returns `500`.
-- Safe client behavior is to retry the entire original request after `500`/`503`.
-- Do not retry unchanged deterministic `invalid` or `conflict` items.
-
-## 12. Timestamp semantics and delete ordering
-
-Active-entity timestamp fields:
-
-- `CurrentVersionOccurredAtUtc`: timestamp of the latest accepted version; used for same-version ordering.
-- `EntityEventHighWatermarkUtc`: monotonic high watermark of accepted versioned-event timestamps; used for delete ordering.
-
-AC057 behavior through implemented pipeline:
-
-1. Start at Version 5 with both timestamps at 10:00.
-2. Accept Version 6 at 09:00.
-3. `CurrentVersionOccurredAtUtc` becomes 09:00.
-4. `EntityEventHighWatermarkUtc` remains 10:00.
-5. Delete at 09:30 is `stale`.
-6. Delete at 10:00 under a new identity is `conflict`.
-7. Delete after 10:00 is `applied`.
-
-## 13. Read API contract and visibility
-
-Endpoints:
-
-- `GET /api/entities?pageSize={1..100}&afterEntityId={cursor}`
-- `GET /api/entities/{entityId}`
-
-Defaults and limits:
-
-- Default `pageSize`: 20
-- Minimum `pageSize`: 1
-- Maximum `pageSize`: 100
-
-List/detail response fields:
-
-- `id`
-- `generation`
-- `latestVersion`
-- `payload`
-- `cmsPublicationStatus`
-- `currentVersionOccurredAtUtc`
-- `entityEventHighWatermarkUtc`
-- `administrativeDisabled`
-
-Visibility matrix:
-
-- Published + not administratively disabled: visible to normal consumer and administrator.
-- Published + administratively disabled: administrator only.
-- Unpublished + not administratively disabled: administrator only.
-- Unpublished + administratively disabled: administrator only.
-- Deleted: visible to neither role.
-
-Security/behavior notes:
-
-- Hidden, deleted, and unknown detail requests are indistinguishable `404` for normal consumers.
-- Cursor ordering and comparison are case-sensitive.
-
-## 14. Administrative state endpoint contract
-
-Endpoint:
-
-- `PUT /api/entities/{entityId}/administrative-state`
-
-Authorization:
-
-- Requires `AdministratorAccess` policy.
-
-Request contract:
-
-- JSON object with required property `Disabled` (exact casing, boolean value).
-
-Response contract:
-
-- `id`
-- `administrativeDisabled`
-- `administrativeStateChangedAtUtc`
-- `administrativeStateChangedBy`
-
-Behavior:
-
-- Unknown request properties are ignored.
-- Repeating the same `Disabled` value is idempotent and does not rewrite rowversion/audit.
-- Only local administrative fields are changed.
-- CMS-owned fields, revisions, and processing logs are not changed.
-
-Common administrative Problem Details codes:
-
-- `INVALID_ADMINISTRATIVE_STATE_REQUEST`
-- `ENTITY_NOT_FOUND`
-- `ADMINISTRATIVE_STATE_UNAVAILABLE`
-- `ADMINISTRATIVE_STATE_UPDATE_FAILED`
-
-## 15. Health endpoints and response safety
-
-Endpoints:
-
-- `GET /health/live`
-- `GET /health/ready`
-
-Behavior:
-
-- Both endpoints are anonymous.
-- Liveness does not require SQL.
-- Readiness checks write and read SQL connectivity.
-- Each readiness probe is bounded by a 3-second timeout.
-
-Response body:
-
-- Healthy: `{"status":"Healthy"}`
-- Unhealthy: `{"status":"Unhealthy"}`
-
-Caching headers:
-
-- Health responses are emitted with `Cache-Control: no-store` and `Pragma: no-cache`.
-
-## 16. Persistence and migration boundaries
-
-Write-context migration owner:
-
-- [src/CmsSync.Infrastructure/Persistence/CmsWriteDbContext.cs](src/CmsSync.Infrastructure/Persistence/CmsWriteDbContext.cs)
-
-Read-context safeguards:
-
-- [src/CmsSync.Infrastructure/Persistence/CmsReadDbContext.cs](src/CmsSync.Infrastructure/Persistence/CmsReadDbContext.cs)
-
-Schema table set:
-
-- `CmsEntities`
-- `CmsEntityRevisions`
-- `CmsDeletionTombstones`
-- `CmsEventProcessingLogs`
-
-Canonical SQL collation and timestamp precision:
-
-- `Latin1_General_100_BIN2`
-- `datetime2(7)`
-
-Migration command used by repository artifacts:
-
-```powershell
-dotnet ef migrations script --idempotent --project src/CmsSync.Infrastructure/CmsSync.Infrastructure.csproj --startup-project src/CmsSync.Api/CmsSync.Api.csproj --context CmsWriteDbContext
+### Example: webhook 200 OK batch response
+
+```json
+{
+	"batchId": "8e97276f-d710-4ef1-a2c3-6f1a4f63237a",
+	"results": [
+		{
+			"sequence": 0,
+			"eventId": "evt-0001",
+			"id": "entity-ac057",
+			"outcome": "applied",
+			"code": "VERSION_ADVANCED",
+			"generation": 1,
+			"resultingVersion": 6
+		},
+		{
+			"sequence": 1,
+			"id": "entity-ac057",
+			"outcome": "conflict",
+			"code": "DELETE_CONFLICT"
+		}
+	],
+	"summary": {
+		"total": 2,
+		"applied": 1,
+		"duplicate": 0,
+		"equivalent": 0,
+		"stale": 0,
+		"invalid": 0,
+		"conflict": 1
+	}
+}
 ```
 
-Database principal setup script:
+`results` are ordered by request sequence. Optional fields (`eventId`, `id`, `generation`, `resultingVersion`) can be omitted per item when not applicable.
 
-- [scripts/container/initialize-database.sql](scripts/container/initialize-database.sql)
+## 9. Entity list and detail response contracts
 
-## 17. Platform support and Apple Silicon limits
+Contract sources:
 
-- Supported Compose path: x86-64 Docker host.
-- Pinned SQL Server image:
-	- `mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89`
-- Apple Silicon guidance:
-	- Use a remote supported SQL Server or Azure SQL.
-	- Do not use emulation claims as a supported local SQL path.
-	- Do not add `platform: linux/amd64` as a workaround.
+- [src/CmsSync.Api/Contracts/Entities/CmsEntityListResponse.cs](src/CmsSync.Api/Contracts/Entities/CmsEntityListResponse.cs)
+- [src/CmsSync.Api/Contracts/Entities/CmsEntityResponse.cs](src/CmsSync.Api/Contracts/Entities/CmsEntityResponse.cs)
 
-See [docs/container-development.md](docs/container-development.md) for full platform guidance.
+### Example: entity list response
 
-## 18. Validation and CI-equivalent commands
+```json
+{
+	"items": [
+		{
+			"id": "entity-ac057",
+			"generation": 1,
+			"latestVersion": 6,
+			"payload": {
+				"value": 6,
+				"source": "documentation-example"
+			},
+			"cmsPublicationStatus": "Unpublished",
+			"currentVersionOccurredAtUtc": "2026-08-02T09:00:00Z",
+			"entityEventHighWatermarkUtc": "2026-08-02T10:00:00Z",
+			"administrativeDisabled": false
+		}
+	],
+	"pageSize": 20,
+	"nextCursor": "entity-ac057"
+}
+```
 
-Repository and build gates:
+### Example: entity detail response
+
+```json
+{
+	"id": "entity-ac057",
+	"generation": 1,
+	"latestVersion": 6,
+	"payload": {
+		"value": 6,
+		"source": "documentation-example"
+	},
+	"cmsPublicationStatus": "Unpublished",
+	"currentVersionOccurredAtUtc": "2026-08-02T09:00:00Z",
+	"entityEventHighWatermarkUtc": "2026-08-02T10:00:00Z",
+	"administrativeDisabled": false
+}
+```
+
+The list contract is the wrapper object with `items`, `pageSize`, and optional `nextCursor`; the item contract is `CmsEntityResponse`.
+
+## 10. Administrative-state request and response contracts
+
+Contract sources:
+
+- [src/CmsSync.Api/Contracts/Entities/CmsAdministrativeStateRequest.cs](src/CmsSync.Api/Contracts/Entities/CmsAdministrativeStateRequest.cs)
+- [src/CmsSync.Api/Contracts/Entities/CmsAdministrativeStateResponse.cs](src/CmsSync.Api/Contracts/Entities/CmsAdministrativeStateResponse.cs)
+
+### Example: administrative-state request
+
+```json
+{
+	"Disabled": true
+}
+```
+
+### Example: administrative-state response
+
+```json
+{
+	"id": "entity-ac057",
+	"administrativeDisabled": true,
+	"administrativeStateChangedAtUtc": "2026-08-03T11:14:52Z",
+	"administrativeStateChangedBy": "administrator-local-user"
+}
+```
+
+The request requires an object with exact-case boolean `Disabled`.
+
+## 11. Endpoint access matrix
+
+| Endpoint | Required access | Allowed actor | Important behavior |
+|---|---|---|---|
+| `POST /cms/events` | `CmsBasic` + `CmsEvents` | CMS service identity | Wrong-scheme credentials, missing credentials, malformed credentials, and invalid credentials return `401` with `Basic realm="CmsBasic"`. |
+| `GET /api/entities` | `ConsumerBasic` + `ConsumerAccess` | Normal consumer or administrator | Wrong-scheme credentials return `401` with `Basic realm="ConsumerBasic"`. |
+| `GET /api/entities/{entityId}` | `ConsumerBasic` + `ConsumerAccess` | Normal consumer or administrator | Hidden/deleted/unknown entity behavior is non-disclosing `404` for normal consumer visibility boundaries. |
+| `PUT /api/entities/{entityId}/administrative-state` | `ConsumerBasic` + `AdministratorAccess` | Administrator only | Normal consumer credentials return `403` without a challenge. Deleted and unknown entity updates return the same non-disclosing `404`. |
+| `GET /health/live` | Anonymous | Any caller | No SQL query; liveness only. |
+| `GET /health/ready` | Anonymous | Any caller | Verifies both write and read SQL connectivity. |
+
+## 12. HTTP status and retry matrix
+
+| Status | When returned | Processing and retry guidance |
+|---|---|---|
+| `200` | A syntactically valid webhook batch completes durably. | This includes batches containing deterministic `invalid` or `conflict` items; valid request-level processing completed. |
+| `400` | Malformed JSON or invalid envelope for `POST /cms/events`; also invalid administrative-state request body shape/casing. | For webhook request-level `400`, no event processing occurs. Correct the request before resubmitting. |
+| `401` | Missing, malformed, invalid, or wrong-scheme credentials. | Response includes the endpoint scheme challenge (`Basic realm="CmsBasic"` or `Basic realm="ConsumerBasic"`). |
+| `403` | Authenticated caller lacks required role (for example, normal consumer on administrator endpoint). | Do not retry with the same actor identity. |
+| `404` | Entity not found under role visibility rules. | Hidden/deleted/unknown detail behavior is non-disclosing where applicable. |
+| `413` | Webhook request size exceeds 16 MiB. | No event processing occurs. Reduce request size before retrying. |
+| `415` | Authenticated webhook request has unsupported media type. | No event processing occurs. Send JSON media type before retrying. |
+| `500` | Unexpected failure prevents durable completion of the valid webhook batch. | Retry the entire original request. Previously committed earlier items remain committed. Deterministic invalid/conflict items must not be retried unchanged. Do not retry only a guessed suffix of the batch. |
+| `503` | Recognized dependency-unavailable failure prevents durable completion. | Retry the entire original request. Previously committed earlier items remain committed. Deterministic invalid/conflict items must not be retried unchanged. Do not retry only a guessed suffix of the batch. |
+
+Additional processing guarantees:
+
+- `400`, `413`, and `415` webhook request-level failures perform no event processing.
+- Cancellation does not undo already committed item transactions.
+
+## 13. Ordering, tombstone, and administrative semantics
+
+Event ordering and version/timestamp rules:
+
+- A higher version wins even when its timestamp is older.
+- `CurrentVersionOccurredAtUtc` may move backward.
+- `EntityEventHighWatermarkUtc` never moves backward.
+- Same-version payload is immutable.
+- Same-version ordering uses `CurrentVersionOccurredAtUtc`.
+- Delete ordering uses `EntityEventHighWatermarkUtc` only.
+- Delete removes the active entity and payload-bearing revisions.
+- Delete advances or creates the payload-free tombstone.
+- A versioned event at or before the tombstone timestamp is stale.
+- Recreation after the tombstone begins the next local generation.
+- Recreation resets `AdministrativeDisabled` to `false`.
+
+Administrative-state rules:
+
+- Publish and unpublish preserve `AdministrativeDisabled`.
+- Delete removes local administrative-state data with the entity.
+- Recreation resets `AdministrativeDisabled` to `false`.
+- Deleted and unknown administrative updates return the same `404` shape.
+- Repeating the current `Disabled` value does not rewrite audit fields or rowversion state.
+
+## 14. Response safety and observability behavior
+
+Security and response-safety guidance:
+
+- Entity responses use no-store protections.
+- Authentication failures use no-store protections.
+- Safe Problem Details responses do not expose stack traces or database details.
+- `X-Correlation-ID` is accepted when safe or generated when absent/unsafe, and it is separate from `HttpContext.TraceIdentifier`.
+
+Logging and metrics guidance:
+
+- Structured processing logs do not contain raw payloads.
+- Metrics use low-cardinality labels (for example outcome/result class, operation, scheme).
+- Authorization headers, decoded Basic credentials, secrets, connection strings, and raw payloads must not be logged.
+- This repository documents in-process structured logs and metrics only. It does not claim an observability backend that is not configured here.
+
+## 15. Health behavior
+
+Health endpoint sources:
+
+- [src/CmsSync.Api/Health/HealthEndpointRoutes.cs](src/CmsSync.Api/Health/HealthEndpointRoutes.cs)
+- [src/CmsSync.Api/Health/SafeHealthResponseWriter.cs](src/CmsSync.Api/Health/SafeHealthResponseWriter.cs)
+- [src/CmsSync.Infrastructure/Health/SqlServerConnectivityHealthCheck.cs](src/CmsSync.Infrastructure/Health/SqlServerConnectivityHealthCheck.cs)
+
+Behavior:
+
+- `GET /health/live` is anonymous and does not query SQL.
+- `GET /health/ready` is anonymous and checks both read and write SQL dependencies.
+- Health responses are minimal (`{"status":"Healthy"}` or `{"status":"Unhealthy"}`) and do not expose provider names, exceptions, credentials, or connection details.
+
+## 16. CI workflow contract
+
+Workflow source:
+
+- [.github/workflows/ci.yml](.github/workflows/ci.yml)
+
+Committed CI behavior:
+
+- Triggers:
+	- pull requests targeting `main`
+	- pushes to `main`
+	- pushes to `feature/t016-*`
+	- `workflow_dispatch`
+- Runner: `ubuntu-24.04` on x86-64
+- Workflow permissions are limited to `contents: read`
+- Official actions pinned to immutable full SHAs:
+	- `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1`
+	- `actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68`
+	- `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`
+- Quality gates run in CI:
+	- repository-policy validation
+	- restore from NuGet.org
+	- Release build
+	- format verification
+	- SQL Server smoke tests
+	- unit and full integration tests with TRX and Cobertura output
+	- clean-volume Compose smoke
+	- cleanup verification
+	- artifact upload: `ci-test-evidence`
+
+The deterministic repository-policy scan is valuable, but it does not replace GitHub secret scanning or a dedicated security product.
+
+## 17. Apple Silicon and unsupported emulation paths
+
+Authoritative platform guidance:
+
+- [docs/container-development.md](docs/container-development.md)
+
+Apple Silicon constraints:
+
+- Rosetta is unsupported for the SQL Server Linux container path.
+- QEMU is unsupported for this local SQL Server container path.
+- Other emulation or translation layers are unsupported.
+- Do not add `platform: linux/amd64` as a workaround.
+- Use a remote supported SQL Server instance or Azure SQL.
+- Use a migration-authorized connection only for migration execution.
+- Use a SELECT-only principal for `ConnectionStrings__ReadDatabase`.
+- SQL Server Testcontainers are not the Apple Silicon local verification path.
+
+## 18. Validation commands
 
 ```powershell
 pwsh ./scripts/validate-repository-policy.ps1
+
 dotnet restore LateralChallenge.sln --source https://api.nuget.org/v3/index.json
+
 dotnet build LateralChallenge.sln --configuration Release --no-restore
+
 dotnet format LateralChallenge.sln --verify-no-changes --no-restore
-```
 
-Test gates:
+dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --no-build --no-restore --filter "Category=Documentation"
 
-```powershell
-dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --no-build --no-restore --filter "Category=SqlServer"
 dotnet test tests/CmsSync.UnitTests/CmsSync.UnitTests.csproj --configuration Release --no-build --no-restore
+
 dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --no-build --no-restore
-```
 
-Container and cleanup verification:
-
-```powershell
 pwsh ./scripts/validate-container-setup.ps1
+
 pwsh ./scripts/verify-container-cleanup.ps1
+
+git diff --check
+git status --short
+git diff --name-only
 ```
 
-## 19. assumptions and known external limitation
+## 19. Assumptions and unresolved external questions
 
-Normative implementation assumptions and unresolved contract questions remain in:
+Normative assumptions for challenge implementation remain in Section 18 of [specs/cms-event-ingestion/spec.md](specs/cms-event-ingestion/spec.md), including:
 
-- Section 18 and Section 20 of [specs/cms-event-ingestion/spec.md](specs/cms-event-ingestion/spec.md)
+- webhook raw-array shape and case-sensitive property names with trimmed, case-insensitive supported type normalization
+- exact wire property `id` mapping to internal `EntityId`
+- bounded request/payload limits and case-sensitive identifier handling
 
-Known external limitation (explicitly tracked):
+Unresolved external questions remain in Section 20 of [specs/cms-event-ingestion/spec.md](specs/cms-event-ingestion/spec.md), including:
 
-- Delete ordering is timestamp-based and does not include a CMS-provided version/sequence/incarnation identifier.
+- uncertainty around CMS `eventId` availability and uniqueness guarantees
+- delete events have no CMS version, sequence, generation, or incarnation identifier
+- timestamp precision, clock-skew, and timestamp-reuse risks remain external concerns
+- credential provisioning and rotation remain operator concerns
+- production migration-principal provisioning remains an operator concern
+- production SELECT-only read-principal provisioning remains an operator concern
+- local tombstone and generation behavior is deterministic but does not replace a future CMS incarnation protocol
+
+No production-integration readiness claim should be made until these external questions are confirmed.
 
 Production-integration readiness requires resolving the external questions documented in [specs/cms-event-ingestion/spec.md](specs/cms-event-ingestion/spec.md).

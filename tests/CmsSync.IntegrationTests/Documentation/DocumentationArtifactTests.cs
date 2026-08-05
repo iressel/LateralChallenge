@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using CmsSync.IntegrationTests.Infrastructure;
 using Xunit;
 
 namespace CmsSync.IntegrationTests.Documentation;
@@ -56,58 +55,68 @@ public sealed class DocumentationArtifactTests
     }
 
     [Fact]
-    public void ReadmeContainsRequiredSetupValidationCommandsAndPinnedImage()
+    public void ReadmeDocumentsConfigurationAndSqlPrincipalSeparation()
     {
         var readme = ReadRepositoryFile("README.md");
 
         Assert.Contains(
-            "dotnet restore LateralChallenge.sln --source https://api.nuget.org/v3/index.json",
+            "`ConnectionStrings__WriteDatabase`",
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "dotnet build LateralChallenge.sln --configuration Release --no-restore",
+            "`ConnectionStrings__ReadDatabase`",
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "dotnet format LateralChallenge.sln --verify-no-changes --no-restore",
+            "CMS username length must be 10 through 20 characters.",
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "dotnet test tests/CmsSync.UnitTests/CmsSync.UnitTests.csproj --configuration Release --no-build --no-restore",
+            "CMS, Consumer, and Administrator usernames are distinct.",
             readme,
             StringComparison.Ordinal);
         Assert.Contains(
-            "dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --no-build --no-restore --filter \"Category=SqlServer\"",
+            "CMS, Consumer, and Administrator passwords are distinct GUID `D` format values.",
             readme,
             StringComparison.Ordinal);
-        Assert.Contains("docker compose config --quiet", readme, StringComparison.Ordinal);
-        Assert.Contains("docker compose up --build --wait", readme, StringComparison.Ordinal);
-        Assert.Contains("pwsh ./scripts/validate-container-setup.ps1", readme, StringComparison.Ordinal);
-        Assert.Contains("pwsh ./scripts/verify-container-cleanup.ps1", readme, StringComparison.Ordinal);
         Assert.Contains(
-            "dotnet ef migrations script --idempotent --project src/CmsSync.Infrastructure/CmsSync.Infrastructure.csproj --startup-project src/CmsSync.Api/CmsSync.Api.csproj --context CmsWriteDbContext",
+            "Basic Authentication requires HTTPS outside Development.",
             readme,
             StringComparison.Ordinal);
-        Assert.Contains(SqlServerTestConstants.Image, readme, StringComparison.Ordinal);
+        Assert.Contains("Real credentials never belong in source control.", readme, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("mssql/server:latest", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("2022-latest", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("`sa` is used only for local database initialization checks and setup.", readme, StringComparison.Ordinal);
+        Assert.Contains("`CmsSyncMigration` is the migration principal", readme, StringComparison.Ordinal);
+        Assert.Contains("`CmsSyncWriter` is the API write-context principal.", readme, StringComparison.Ordinal);
+        Assert.Contains("`CmsSyncReader` is SELECT-only.", readme, StringComparison.Ordinal);
+        Assert.Contains(
+            "Normal API startup does not call `Database.Migrate`, `EnsureCreated`, or equivalent auto-migration behavior.",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Production migrations require a separately authorized migration principal.",
+            readme,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The API write identity must not receive migration permissions.",
+            readme,
+            StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ReadmeWebhookExampleIsRawArrayWithWireIdAndDocumentedTypeVariants()
+    public void ReadmeWebhookRequestAndResponseExamplesUseExactContracts()
     {
         var readme = ReadRepositoryFile("README.md");
-        var json = ExtractFencedBlock(
+        var requestJson = ExtractFencedBlock(
             readme,
             "### Example: raw webhook array request",
             "json");
 
-        using var document = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.Array, document.RootElement.ValueKind);
-        Assert.Equal(3, document.RootElement.GetArrayLength());
+        using var requestDocument = JsonDocument.Parse(requestJson);
+        Assert.Equal(JsonValueKind.Array, requestDocument.RootElement.ValueKind);
+        Assert.Equal(3, requestDocument.RootElement.GetArrayLength());
 
-        var events = document.RootElement.EnumerateArray().ToArray();
+        var events = requestDocument.RootElement.EnumerateArray().ToArray();
         Assert.Contains(events, item => string.Equals(item.GetProperty("type").GetString(), "Publish", StringComparison.Ordinal));
         Assert.Contains(
             events,
@@ -136,67 +145,208 @@ public sealed class DocumentationArtifactTests
             Assert.True(item.TryGetProperty("payload", out var payload));
             Assert.Equal(JsonValueKind.Object, payload.ValueKind);
         });
+
+        var responseJson = ExtractFencedBlock(
+            readme,
+            "### Example: webhook 200 OK batch response",
+            "json");
+        using var responseDocument = JsonDocument.Parse(responseJson);
+        var response = responseDocument.RootElement;
+
+        AssertPropertyNames(response, "batchId", "results", "summary");
+        Assert.True(Guid.TryParse(response.GetProperty("batchId").GetString(), out _));
+
+        var results = response.GetProperty("results").EnumerateArray().ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.Equal(0, results[0].GetProperty("sequence").GetInt32());
+        Assert.Equal(1, results[1].GetProperty("sequence").GetInt32());
+
+        AssertPropertyNames(results[0], "sequence", "eventId", "id", "outcome", "code", "generation", "resultingVersion");
+        AssertPropertyNames(results[1], "sequence", "id", "outcome", "code");
+
+        var summary = response.GetProperty("summary");
+        AssertPropertyNames(
+            summary,
+            "total",
+            "applied",
+            "duplicate",
+            "equivalent",
+            "stale",
+            "invalid",
+            "conflict");
     }
 
     [Fact]
-    public void ReadmeDocumentsOutcomesRetryRulesAndTimestampHighWatermarkBehavior()
+    public void ReadmeEntityAndAdministrativeExamplesUseExactTopLevelPropertyNames()
     {
         var readme = ReadRepositoryFile("README.md");
-        var expectedOutcomes = new[]
+
+        var listJson = ExtractFencedBlock(readme, "### Example: entity list response", "json");
+        using var listDocument = JsonDocument.Parse(listJson);
+        var list = listDocument.RootElement;
+        AssertPropertyNames(list, "items", "pageSize", "nextCursor");
+
+        var listItem = list.GetProperty("items")[0];
+        AssertPropertyNames(
+            listItem,
+            "id",
+            "generation",
+            "latestVersion",
+            "payload",
+            "cmsPublicationStatus",
+            "currentVersionOccurredAtUtc",
+            "entityEventHighWatermarkUtc",
+            "administrativeDisabled");
+
+        var detailJson = ExtractFencedBlock(readme, "### Example: entity detail response", "json");
+        using var detailDocument = JsonDocument.Parse(detailJson);
+        AssertPropertyNames(
+            detailDocument.RootElement,
+            "id",
+            "generation",
+            "latestVersion",
+            "payload",
+            "cmsPublicationStatus",
+            "currentVersionOccurredAtUtc",
+            "entityEventHighWatermarkUtc",
+            "administrativeDisabled");
+
+        var requestJson = ExtractFencedBlock(readme, "### Example: administrative-state request", "json");
+        using var requestDocument = JsonDocument.Parse(requestJson);
+        AssertPropertyNames(requestDocument.RootElement, "Disabled");
+        Assert.Equal(JsonValueKind.True, requestDocument.RootElement.GetProperty("Disabled").ValueKind);
+
+        var responseJson = ExtractFencedBlock(readme, "### Example: administrative-state response", "json");
+        using var responseDocument = JsonDocument.Parse(responseJson);
+        AssertPropertyNames(
+            responseDocument.RootElement,
+            "id",
+            "administrativeDisabled",
+            "administrativeStateChangedAtUtc",
+            "administrativeStateChangedBy");
+    }
+
+    [Fact]
+    public void ReadmeDocumentsEndpointAccessStatusRetrySafetyCiPlatformAndOpenQuestions()
+    {
+        var readme = ReadRepositoryFile("README.md");
+
+        var requiredEndpoints = new[]
         {
-            "`applied`",
-            "`duplicate`",
-            "`equivalent`",
-            "`stale`",
-            "`invalid`",
-            "`conflict`",
+            "POST /cms/events",
+            "GET /api/entities",
+            "GET /api/entities/{entityId}",
+            "PUT /api/entities/{entityId}/administrative-state",
+            "GET /health/live",
+            "GET /health/ready",
         };
 
-        foreach (var outcome in expectedOutcomes)
+        foreach (var endpoint in requiredEndpoints)
         {
-            Assert.Contains(outcome, readme, StringComparison.Ordinal);
+            Assert.Contains(endpoint, readme, StringComparison.Ordinal);
         }
 
-        Assert.Contains("retry the entire original request", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Do not retry unchanged deterministic `invalid` or `conflict` items", readme, StringComparison.Ordinal);
+        Assert.Contains("Basic realm=\"CmsBasic\"", readme, StringComparison.Ordinal);
+        Assert.Contains("Basic realm=\"ConsumerBasic\"", readme, StringComparison.Ordinal);
+        Assert.Contains("Normal consumer credentials return `403` without a challenge.", readme, StringComparison.Ordinal);
+        Assert.Contains("non-disclosing `404`", readme, StringComparison.Ordinal);
 
-        Assert.Contains("CurrentVersionOccurredAtUtc", readme, StringComparison.Ordinal);
-        Assert.Contains("EntityEventHighWatermarkUtc", readme, StringComparison.Ordinal);
-        Assert.Contains("Start at Version 5 with both timestamps at 10:00", readme, StringComparison.Ordinal);
-        Assert.Contains("Accept Version 6 at 09:00", readme, StringComparison.Ordinal);
-        Assert.Contains("Delete at 09:30 is `stale`", readme, StringComparison.Ordinal);
-        Assert.Contains("Delete at 10:00 under a new identity is `conflict`", readme, StringComparison.Ordinal);
-        Assert.Contains("Delete after 10:00 is `applied`", readme, StringComparison.Ordinal);
+        foreach (var status in new[] { "200", "400", "401", "403", "404", "413", "415", "500", "503" })
+        {
+            Assert.Contains($"| `{status}` |", readme, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("Malformed JSON or invalid envelope for `POST /cms/events`", readme, StringComparison.Ordinal);
+        Assert.Contains("`400`, `413`, and `415` webhook request-level failures perform no event processing.", readme, StringComparison.Ordinal);
+        Assert.Contains("Retry the entire original request.", readme, StringComparison.Ordinal);
+        Assert.Contains("Previously committed earlier items remain committed.", readme, StringComparison.Ordinal);
+        Assert.Contains("Deterministic invalid/conflict items must not be retried unchanged.", readme, StringComparison.Ordinal);
+        Assert.Contains("Do not retry only a guessed suffix of the batch.", readme, StringComparison.Ordinal);
+        Assert.Contains("Cancellation does not undo already committed item transactions.", readme, StringComparison.Ordinal);
+
+        Assert.Contains("A higher version wins even when its timestamp is older.", readme, StringComparison.Ordinal);
+        Assert.Contains("`CurrentVersionOccurredAtUtc` may move backward.", readme, StringComparison.Ordinal);
+        Assert.Contains("`EntityEventHighWatermarkUtc` never moves backward.", readme, StringComparison.Ordinal);
+        Assert.Contains("Same-version payload is immutable.", readme, StringComparison.Ordinal);
+        Assert.Contains("Same-version ordering uses `CurrentVersionOccurredAtUtc`.", readme, StringComparison.Ordinal);
+        Assert.Contains("Delete ordering uses `EntityEventHighWatermarkUtc` only.", readme, StringComparison.Ordinal);
+        Assert.Contains("Delete removes the active entity and payload-bearing revisions.", readme, StringComparison.Ordinal);
+        Assert.Contains("Delete advances or creates the payload-free tombstone.", readme, StringComparison.Ordinal);
+        Assert.Contains("A versioned event at or before the tombstone timestamp is stale.", readme, StringComparison.Ordinal);
+        Assert.Contains("Recreation after the tombstone begins the next local generation.", readme, StringComparison.Ordinal);
+        Assert.Contains("Recreation resets `AdministrativeDisabled` to `false`.", readme, StringComparison.Ordinal);
+        Assert.Contains("Publish and unpublish preserve `AdministrativeDisabled`.", readme, StringComparison.Ordinal);
+        Assert.Contains("Delete removes local administrative-state data with the entity.", readme, StringComparison.Ordinal);
+        Assert.Contains("Deleted and unknown administrative updates return the same `404` shape.", readme, StringComparison.Ordinal);
+        Assert.Contains("Repeating the current `Disabled` value does not rewrite audit fields or rowversion state.", readme, StringComparison.Ordinal);
+
+        Assert.Contains("Entity responses use no-store protections.", readme, StringComparison.Ordinal);
+        Assert.Contains("Authentication failures use no-store protections.", readme, StringComparison.Ordinal);
+        Assert.Contains("Safe Problem Details responses do not expose stack traces or database details.", readme, StringComparison.Ordinal);
+        Assert.Contains("`X-Correlation-ID` is accepted when safe or generated when absent/unsafe, and it is separate from `HttpContext.TraceIdentifier`.", readme, StringComparison.Ordinal);
+        Assert.Contains("Structured processing logs do not contain raw payloads.", readme, StringComparison.Ordinal);
+        Assert.Contains("Metrics use low-cardinality labels", readme, StringComparison.Ordinal);
+        Assert.Contains("Authorization headers, decoded Basic credentials, secrets, connection strings, and raw payloads must not be logged.", readme, StringComparison.Ordinal);
+        Assert.Contains("It does not claim an observability backend that is not configured here.", readme, StringComparison.Ordinal);
+
+        Assert.Contains("`GET /health/live` is anonymous and does not query SQL.", readme, StringComparison.Ordinal);
+        Assert.Contains("`GET /health/ready` is anonymous and checks both read and write SQL dependencies.", readme, StringComparison.Ordinal);
+        Assert.Contains("do not expose provider names, exceptions, credentials, or connection details.", readme, StringComparison.Ordinal);
+
+        Assert.Contains("pull requests targeting `main`", readme, StringComparison.Ordinal);
+        Assert.Contains("pushes to `main`", readme, StringComparison.Ordinal);
+        Assert.Contains("pushes to `feature/t016-*`", readme, StringComparison.Ordinal);
+        Assert.Contains("`workflow_dispatch`", readme, StringComparison.Ordinal);
+        Assert.Contains("`ubuntu-24.04` on x86-64", readme, StringComparison.Ordinal);
+        Assert.Contains("`contents: read`", readme, StringComparison.Ordinal);
+        Assert.Contains("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", readme, StringComparison.Ordinal);
+        Assert.Contains("actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68", readme, StringComparison.Ordinal);
+        Assert.Contains("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", readme, StringComparison.Ordinal);
+        Assert.Contains("repository-policy validation", readme, StringComparison.Ordinal);
+        Assert.Contains("restore from NuGet.org", readme, StringComparison.Ordinal);
+        Assert.Contains("Release build", readme, StringComparison.Ordinal);
+        Assert.Contains("format verification", readme, StringComparison.Ordinal);
+        Assert.Contains("SQL Server smoke tests", readme, StringComparison.Ordinal);
+        Assert.Contains("TRX and Cobertura", readme, StringComparison.Ordinal);
+        Assert.Contains("clean-volume Compose smoke", readme, StringComparison.Ordinal);
+        Assert.Contains("cleanup verification", readme, StringComparison.Ordinal);
+        Assert.Contains("artifact upload: `ci-test-evidence`", readme, StringComparison.Ordinal);
+        Assert.Contains("does not replace GitHub secret scanning or a dedicated security product.", readme, StringComparison.Ordinal);
+
+        Assert.Contains("Rosetta is unsupported for the SQL Server Linux container path.", readme, StringComparison.Ordinal);
+        Assert.Contains("QEMU is unsupported for this local SQL Server container path.", readme, StringComparison.Ordinal);
+        Assert.Contains("Other emulation or translation layers are unsupported.", readme, StringComparison.Ordinal);
+        Assert.Contains("Do not add `platform: linux/amd64` as a workaround.", readme, StringComparison.Ordinal);
+        Assert.Contains("Use a remote supported SQL Server instance or Azure SQL.", readme, StringComparison.Ordinal);
+        Assert.Contains("Use a migration-authorized connection only for migration execution.", readme, StringComparison.Ordinal);
+        Assert.Contains("Use a SELECT-only principal for `ConnectionStrings__ReadDatabase`.", readme, StringComparison.Ordinal);
+        Assert.Contains("SQL Server Testcontainers are not the Apple Silicon local verification path.", readme, StringComparison.Ordinal);
+
+        Assert.Contains("webhook raw-array shape and case-sensitive property names", readme, StringComparison.Ordinal);
+        Assert.Contains("uncertainty around CMS `eventId` availability and uniqueness guarantees", readme, StringComparison.Ordinal);
+        Assert.Contains("delete events have no CMS version, sequence, generation, or incarnation identifier", readme, StringComparison.Ordinal);
+        Assert.Contains("timestamp precision, clock-skew, and timestamp-reuse risks remain external concerns", readme, StringComparison.Ordinal);
+        Assert.Contains("credential provisioning and rotation remain operator concerns", readme, StringComparison.Ordinal);
+        Assert.Contains("production migration-principal provisioning remains an operator concern", readme, StringComparison.Ordinal);
+        Assert.Contains("production SELECT-only read-principal provisioning remains an operator concern", readme, StringComparison.Ordinal);
+        Assert.Contains("local tombstone and generation behavior is deterministic but does not replace a future CMS incarnation protocol", readme, StringComparison.Ordinal);
+        Assert.Contains("No production-integration readiness claim should be made until these external questions are confirmed.", readme, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ReadmeDocumentsSecuritySchemesPoliciesRolesAndPlatformBoundaries()
-    {
-        var readme = ReadRepositoryFile("README.md");
-
-        Assert.Contains("`CmsBasic`", readme, StringComparison.Ordinal);
-        Assert.Contains("`ConsumerBasic`", readme, StringComparison.Ordinal);
-        Assert.Contains("`CmsEvents`", readme, StringComparison.Ordinal);
-        Assert.Contains("`ConsumerAccess`", readme, StringComparison.Ordinal);
-        Assert.Contains("`AdministratorAccess`", readme, StringComparison.Ordinal);
-        Assert.Contains("`CmsService`", readme, StringComparison.Ordinal);
-        Assert.Contains("`NormalConsumer`", readme, StringComparison.Ordinal);
-        Assert.Contains("`Administrator`", readme, StringComparison.Ordinal);
-
-        Assert.Contains("`Cache-Control: no-store`", readme, StringComparison.Ordinal);
-        Assert.Contains("HTTPS", readme, StringComparison.Ordinal);
-
-        Assert.Contains("Apple Silicon", readme, StringComparison.Ordinal);
-        Assert.Contains("remote supported SQL Server or Azure SQL", readme, StringComparison.Ordinal);
-        Assert.Contains("Do not add `platform: linux/amd64`", readme, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void TasksFileKeepsT018Unchecked()
+    public void TasksFileKeepsT017CheckedAndT018Unchecked()
     {
         var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
 
+        Assert.Contains("- [x] **T017", tasks, StringComparison.Ordinal);
         Assert.Contains("- [ ] **T018", tasks, StringComparison.Ordinal);
+    }
+
+    private static void AssertPropertyNames(JsonElement value, params string[] expectedPropertyNames)
+    {
+        Assert.Equal(JsonValueKind.Object, value.ValueKind);
+        var propertyNames = value.EnumerateObject().Select(property => property.Name).ToArray();
+        Assert.Equal(expectedPropertyNames, propertyNames);
     }
 
     private static string ReadRepositoryFile(string relativePath)
