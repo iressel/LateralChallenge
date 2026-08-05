@@ -6,6 +6,7 @@ using Xunit;
 
 namespace CmsSync.IntegrationTests.Authentication;
 
+[Collection(StartupCredentialValidationCollectionDefinition.Name)]
 [Trait("Category", "Authentication")]
 [Trait("Category", "Security")]
 public sealed class StartupCredentialValidationTests
