@@ -392,6 +392,52 @@ public sealed class FinalReviewArtifactTests
     }
 
     [Fact]
+    public void ControllerTransportRefactorLeavesActiveControllerRoutesAndCurrentTraceabilityEvidence()
+    {
+        var program = ReadRepositoryFile("src/CmsSync.Api/Program.cs");
+        var cmsEventsController = ReadRepositoryFile("src/CmsSync.Api/Controllers/CmsEventsController.cs");
+        var cmsEntitiesController = ReadRepositoryFile("src/CmsSync.Api/Controllers/CmsEntitiesController.cs");
+        var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
+        var section19 = ExtractSection(
+            tasks,
+            "## 19. Acceptance-criterion traceability",
+            "## 20. Major-plan-phase traceability");
+
+        Assert.Contains("builder.Services.AddControllers();", program, StringComparison.Ordinal);
+        Assert.Contains("app.MapControllers();", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("app.MapCmsEvents();", program, StringComparison.Ordinal);
+        Assert.DoesNotContain("app.MapCmsEntities();", program, StringComparison.Ordinal);
+
+        Assert.Contains("[ApiController]", cmsEventsController, StringComparison.Ordinal);
+        Assert.Contains("[Route(CmsEventsRoutes.RouteTemplate)]", cmsEventsController, StringComparison.Ordinal);
+        Assert.Contains("[HttpPost]", cmsEventsController, StringComparison.Ordinal);
+        Assert.Contains("ProcessEventsAsync", cmsEventsController, StringComparison.Ordinal);
+
+        Assert.Contains("[ApiController]", cmsEntitiesController, StringComparison.Ordinal);
+        Assert.Contains("[Route(CmsEntitiesRoutes.RouteTemplate)]", cmsEntitiesController, StringComparison.Ordinal);
+        Assert.Contains("ListEntitiesAsync", cmsEntitiesController, StringComparison.Ordinal);
+        Assert.Contains("GetEntityByIdAsync", cmsEntitiesController, StringComparison.Ordinal);
+        Assert.Contains("SetAdministrativeStateAsync", cmsEntitiesController, StringComparison.Ordinal);
+
+        Assert.False(PathExistsInRepository("src/CmsSync.Api/Webhook/CmsEventsEndpoint.cs"));
+        Assert.False(PathExistsInRepository("src/CmsSync.Api/Entities/CmsEntitiesEndpoint.cs"));
+
+        Assert.Contains("src/CmsSync.Api/Controllers/CmsEventsController.cs", section19, StringComparison.Ordinal);
+        Assert.Contains("src/CmsSync.Api/Controllers/CmsEntitiesController.cs", section19, StringComparison.Ordinal);
+        Assert.DoesNotContain("src/CmsSync.Api/Webhook/CmsEventsEndpoint.cs", section19, StringComparison.Ordinal);
+        Assert.DoesNotContain("src/CmsSync.Api/Entities/CmsEntitiesEndpoint.cs", section19, StringComparison.Ordinal);
+
+        for (var index = 1; index <= 18; index++)
+        {
+            var taskId = $"T{index:000}";
+            var taskBlock = ExtractTaskBlock(tasks, taskId);
+
+            Assert.Contains($"- [x] **{taskId}", taskBlock, StringComparison.Ordinal);
+            Assert.Contains("Completion evidence (", taskBlock, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void ContractArtifactsAgreeOnRawArrayWireIdNormalizationAndTimestampSeparation()
     {
         var spec = ReadRepositoryFile("specs/cms-event-ingestion/spec.md");

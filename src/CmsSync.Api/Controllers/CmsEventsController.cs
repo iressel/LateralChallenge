@@ -4,36 +4,45 @@ using System.Security.Claims;
 using CmsSync.Api.Contracts.CmsEvents;
 using CmsSync.Api.Errors;
 using CmsSync.Api.Observability;
+using CmsSync.Api.Webhook;
 using CmsSync.Application.EventIngestion;
 using CmsSync.Infrastructure.Authentication;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
-namespace CmsSync.Api.Webhook;
+namespace CmsSync.Api.Controllers;
 
-public static class CmsEventsEndpoint
+[ApiController]
+[Route(CmsEventsRoutes.RouteTemplate)]
+[Authorize(Policy = AuthenticationConstants.CmsEventsPolicy)]
+public sealed class CmsEventsController : ControllerBase
 {
-    public const string Route = "/cms/events";
+    private readonly CmsEventArrayParser _parser;
+    private readonly CmsEventBatchService _batchService;
+    private readonly CmsEventBatchTelemetry _telemetry;
 
-    public static RouteHandlerBuilder MapCmsEvents(this IEndpointRouteBuilder endpoints)
-    {
-        ArgumentNullException.ThrowIfNull(endpoints);
-
-        return endpoints.MapPost(Route, HandleAsync)
-            .RequireAuthorization(AuthenticationConstants.CmsEventsPolicy)
-            .Produces<CmsEventBatchResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status400BadRequest)
-            .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
-            .ProducesProblem(StatusCodes.Status415UnsupportedMediaType)
-            .ProducesProblem(StatusCodes.Status500InternalServerError)
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
-    }
-
-    private static async Task<IResult> HandleAsync(
-        HttpContext context,
+    public CmsEventsController(
         CmsEventArrayParser parser,
         CmsEventBatchService batchService,
         CmsEventBatchTelemetry telemetry)
     {
+        _parser = parser ?? throw new ArgumentNullException(nameof(parser));
+        _batchService = batchService ?? throw new ArgumentNullException(nameof(batchService));
+        _telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
+    }
+
+    [HttpPost]
+    [ProducesResponseType(typeof(CmsEventBatchResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status413PayloadTooLarge)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status415UnsupportedMediaType)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IResult> ProcessEventsAsync()
+    {
+        var context = HttpContext;
+
         if (!IsSupportedJsonMediaType(context.Request.ContentType))
         {
             return SafeProblemDetails.Create(
@@ -46,7 +55,7 @@ public static class CmsEventsEndpoint
 
         var requestBody = context.Features.Get<CmsWebhookRequestBody>()
             ?? throw new InvalidOperationException("The CMS webhook request body was not size-validated.");
-        var parseResult = parser.Parse(requestBody.Utf8Json);
+        var parseResult = _parser.Parse(requestBody.Utf8Json);
 
         if (!parseResult.IsSuccess)
         {
@@ -75,17 +84,18 @@ public static class CmsEventsEndpoint
             authenticatedSubject);
         var traceId = Activity.Current?.TraceId.ToString() ?? "none";
         var startedTimestamp = Stopwatch.GetTimestamp();
-        telemetry.RecordStarted(batchId, parseResult.Items.Count, correlationId, traceId);
+        _telemetry.RecordStarted(batchId, parseResult.Items.Count, correlationId, traceId);
 
         try
         {
-            var result = await batchService.ProcessAsync(request, context.RequestAborted);
-            telemetry.RecordCompleted(
+            var result = await _batchService.ProcessAsync(request, context.RequestAborted);
+            _telemetry.RecordCompleted(
                 batchId,
                 parseResult.Items.Count,
                 Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds,
                 correlationId,
                 traceId);
+
             return Results.Ok(new CmsEventBatchResponse(result));
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
@@ -94,7 +104,7 @@ public static class CmsEventsEndpoint
         }
         catch (EventProcessingDependencyUnavailableException)
         {
-            telemetry.RecordFailed(
+            _telemetry.RecordFailed(
                 batchId,
                 parseResult.Items.Count,
                 "dependency_unavailable",
@@ -104,7 +114,7 @@ public static class CmsEventsEndpoint
         }
         catch (Exception)
         {
-            telemetry.RecordFailed(
+            _telemetry.RecordFailed(
                 batchId,
                 parseResult.Items.Count,
                 "unexpected_failure",
