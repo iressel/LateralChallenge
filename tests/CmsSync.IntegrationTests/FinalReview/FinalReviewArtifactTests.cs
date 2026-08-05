@@ -258,11 +258,11 @@ public sealed class FinalReviewArtifactTests
     }
 
     [Fact]
-    public void CompletedTasksThroughT017ContainCompletionEvidenceAndT018IsUnchecked()
+    public void AllTasksThroughT018AreCheckedAndContainCompletionEvidence()
     {
         var tasks = ReadRepositoryFile("specs/cms-event-ingestion/tasks.md");
 
-        for (var index = 1; index <= 17; index++)
+        for (var index = 1; index <= 18; index++)
         {
             var taskId = $"T{index:000}";
             var taskBlock = ExtractTaskBlock(tasks, taskId);
@@ -271,14 +271,40 @@ public sealed class FinalReviewArtifactTests
             Assert.Contains("Completion evidence (", taskBlock, StringComparison.Ordinal);
         }
 
+        Assert.DoesNotContain("- [ ] **T018", tasks, StringComparison.Ordinal);
+
         var t018Block = ExtractTaskBlock(tasks, "T018");
-        Assert.Contains("- [ ] **T018", t018Block, StringComparison.Ordinal);
-        Assert.DoesNotContain("- [x] **T018", t018Block, StringComparison.Ordinal);
-        Assert.DoesNotContain("Completion evidence (", t018Block, StringComparison.Ordinal);
+        Assert.Contains("- [x] **T018", t018Block, StringComparison.Ordinal);
+        Assert.Contains("Completion evidence (2026-08-05)", t018Block, StringComparison.Ordinal);
+
+        var requiredEvidenceMarkers = new[]
+        {
+            "PR: #17",
+            "7495799aef2451666b18db9d81582fb308c05826",
+            "run number: 17",
+            "run id: 31009499860",
+            "job id: 92317709039",
+            "artifact id: 8931881330",
+            "sha256:e2d45a570893d607279eaaf374827463bbb5c327d597bfc6088973fc5e96bac0",
+            "41/41 SQL Server tests",
+            "252/252 unit tests",
+            "322/322 integration tests",
+            "AC-001 through AC-057",
+            "all 57 acceptance criteria",
+            "StartupCredentialValidation",
+            "DisableParallelization",
+            "no global parallelization disablement was introduced",
+            "external CMS questions in spec Section 20 remain unresolved by design",
+        };
+
+        foreach (var marker in requiredEvidenceMarkers)
+        {
+            Assert.Contains(marker, t018Block, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public void StartupCredentialValidationCollectionIsolationRemainsNarrowAndT018IsIncomplete()
+    public void StartupCredentialValidationCollectionIsolationRemainsNarrowAfterT018Completion()
     {
         const string startupValidationTestsPath =
             "tests/CmsSync.IntegrationTests/Authentication/StartupCredentialValidationTests.cs";
@@ -360,9 +386,9 @@ public sealed class FinalReviewArtifactTests
         }
 
         var t018Block = ExtractTaskBlock(tasks, "T018");
-        Assert.Contains("- [ ] **T018", t018Block, StringComparison.Ordinal);
-        Assert.DoesNotContain("- [x] **T018", t018Block, StringComparison.Ordinal);
-        Assert.DoesNotContain("Completion evidence (", t018Block, StringComparison.Ordinal);
+        Assert.Contains("- [x] **T018", t018Block, StringComparison.Ordinal);
+        Assert.DoesNotContain("- [ ] **T018", t018Block, StringComparison.Ordinal);
+        Assert.Contains("Completion evidence (", t018Block, StringComparison.Ordinal);
     }
 
     [Fact]
