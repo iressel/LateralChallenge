@@ -80,6 +80,9 @@ Compose and container artifacts:
 - [compose.yaml](compose.yaml)
 - [Dockerfile](Dockerfile)
 - [docs/container-development.md](docs/container-development.md)
+- [apphost.cs](apphost.cs)
+- [scripts/configure-aspire-local.ps1](scripts/configure-aspire-local.ps1)
+- [scripts/validate-aspire-setup.ps1](scripts/validate-aspire-setup.ps1)
 
 Supported local Compose path is x86-64:
 
@@ -88,6 +91,20 @@ docker compose config --quiet
 docker compose down --volumes --remove-orphans
 docker compose up --build --wait
 docker compose ps
+```
+
+Optional local Aspire orchestration path (additional path; Compose remains supported):
+
+```powershell
+pwsh ./scripts/configure-aspire-local.ps1
+
+aspire start --apphost ./apphost.cs --isolated --non-interactive
+aspire wait sql --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive
+aspire wait db-init --status down --timeout 480 --apphost ./apphost.cs --non-interactive
+aspire wait migration --status down --timeout 480 --apphost ./apphost.cs --non-interactive
+aspire wait api --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive
+aspire describe --apphost ./apphost.cs --format Json --non-interactive
+aspire stop --apphost ./apphost.cs --non-interactive
 ```
 
 Optional local API startup against an existing SQL Server:
@@ -103,6 +120,12 @@ Deterministic container validation and cleanup:
 ```powershell
 pwsh ./scripts/validate-container-setup.ps1
 pwsh ./scripts/verify-container-cleanup.ps1
+```
+
+Deterministic Aspire validation and cleanup:
+
+```powershell
+pwsh ./scripts/validate-aspire-setup.ps1
 ```
 
 ## 6. Authentication and authorization contract
@@ -477,6 +500,8 @@ dotnet test tests/CmsSync.UnitTests/CmsSync.UnitTests.csproj --configuration Rel
 dotnet test tests/CmsSync.IntegrationTests/CmsSync.IntegrationTests.csproj --configuration Release --no-build --no-restore
 
 pwsh ./scripts/validate-container-setup.ps1
+
+pwsh ./scripts/validate-aspire-setup.ps1
 
 pwsh ./scripts/verify-container-cleanup.ps1
 
