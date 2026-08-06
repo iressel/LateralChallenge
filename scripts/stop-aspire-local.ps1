@@ -27,6 +27,29 @@ if ([string]::IsNullOrWhiteSpace($SqlDataVolumeName)) {
     throw "SqlDataVolumeName must be provided."
 }
 
+$aspireCommand = Get-Command `
+    -Name "aspire" `
+    -CommandType Application `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+
+if ($null -eq $aspireCommand) {
+    throw "The Aspire CLI is required but was not found in PATH."
+}
+
+$dockerCommand = Get-Command `
+    -Name "docker" `
+    -CommandType Application `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+
+if ($null -eq $dockerCommand) {
+    throw "Docker is required but was not found in PATH."
+}
+
+$aspireExecutable = $aspireCommand.Source
+$dockerExecutable = $dockerCommand.Source
+
 $allowedSqlImageRepositories = @(
     "mcr.microsoft.com/mssql/server",
     "mssql/server"
@@ -43,7 +66,7 @@ function Invoke-CheckedCapture {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string] $Command,
+        [string] $ExecutablePath,
 
         [Parameter(Mandatory)]
         [string[]] $Arguments,
@@ -54,7 +77,7 @@ function Invoke-CheckedCapture {
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        $output = & $Command @Arguments 2>$null
+        $output = & $ExecutablePath @Arguments 2>$null
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -62,7 +85,7 @@ function Invoke-CheckedCapture {
     }
 
     if (!$AllowFailure -and $exitCode -ne 0) {
-        throw "Operation '$SafeOperationDescription' failed for '$Command' with exit code $exitCode."
+        throw "Operation '$SafeOperationDescription' failed for '$ExecutablePath' with exit code $exitCode."
     }
 
     $global:LASTEXITCODE = $exitCode
@@ -92,7 +115,7 @@ function Test-IsExpectedSqlImage {
 function Get-ContainerInspections {
     $containerIdsRaw = Invoke-CheckedCapture `
         -SafeOperationDescription "list Docker containers" `
-        -Command "docker" `
+        -ExecutablePath $dockerExecutable `
         -Arguments @("ps", "-a", "--quiet")
 
     $containerIds = @(
@@ -105,7 +128,7 @@ function Get-ContainerInspections {
     foreach ($containerId in $containerIds) {
         $inspectText = Invoke-CheckedCapture `
             -SafeOperationDescription "inspect Docker container" `
-            -Command "docker" `
+            -ExecutablePath $dockerExecutable `
             -Arguments @("inspect", $containerId)
 
         $inspect = $inspectText | ConvertFrom-Json
@@ -190,7 +213,7 @@ function Test-ExactDockerVolumeExists {
 
     $volumeNames = Invoke-CheckedCapture `
         -SafeOperationDescription "list Docker volumes" `
-        -Command "docker" `
+        -ExecutablePath $dockerExecutable `
         -Arguments @("volume", "ls", "--format", "{{.Name}}")
 
     return @($volumeNames -split "`r?`n" | Where-Object { $_ -eq $VolumeName }).Count -gt 0
@@ -204,7 +227,7 @@ function Try-GetAppHostResourceNames {
 
     $describeText = Invoke-CheckedCapture `
         -SafeOperationDescription "describe AppHost resources" `
-        -Command "aspire" `
+        -ExecutablePath $aspireExecutable `
         -Arguments @("describe", "--apphost", $ResolvedAppHostPath, "--format", "Json", "--non-interactive") `
         -AllowFailure
 
@@ -294,7 +317,7 @@ function Assert-RequiredPortsNotOwnedByContainersOrProcesses {
 
     $runningContainerIdsRaw = Invoke-CheckedCapture `
         -SafeOperationDescription "list running Docker containers" `
-        -Command "docker" `
+        -ExecutablePath $dockerExecutable `
         -Arguments @("ps", "--quiet")
 
     $runningContainerIds = @(
@@ -306,7 +329,7 @@ function Assert-RequiredPortsNotOwnedByContainersOrProcesses {
     foreach ($containerId in $runningContainerIds) {
         $inspectText = Invoke-CheckedCapture `
             -SafeOperationDescription "inspect running Docker container" `
-            -Command "docker" `
+            -ExecutablePath $dockerExecutable `
             -Arguments @("inspect", $containerId)
 
         $inspect = $inspectText | ConvertFrom-Json
@@ -396,7 +419,7 @@ if ($null -eq $appHostResourceNames) {
 
 Invoke-CheckedCapture `
     -SafeOperationDescription "stop Aspire AppHost" `
-    -Command "aspire" `
+    -ExecutablePath $aspireExecutable `
     -Arguments @("stop", "--apphost", $resolvedAppHostPath, "--non-interactive") | Out-Null
 
 $candidates = Get-SqlContainerCandidates `
@@ -431,12 +454,12 @@ if ($candidates.Valid.Count -eq 1) {
 
     Invoke-CheckedCapture `
         -SafeOperationDescription "remove validated SQL container" `
-        -Command "docker" `
+        -ExecutablePath $dockerExecutable `
         -Arguments @("rm", "-f", $sqlContainer.Id) | Out-Null
 
     $containerStillExists = Invoke-CheckedCapture `
         -SafeOperationDescription "verify SQL container removal" `
-        -Command "docker" `
+        -ExecutablePath $dockerExecutable `
         -Arguments @("ps", "-a", "--quiet", "--filter", "id=$($sqlContainer.Id)")
 
     if (!([string]::IsNullOrWhiteSpace($containerStillExists))) {
@@ -453,7 +476,7 @@ if ($RemoveData) {
     if (Test-ExactDockerVolumeExists -VolumeName $SqlDataVolumeName) {
         Invoke-CheckedCapture `
             -SafeOperationDescription "remove SQL data volume" `
-            -Command "docker" `
+            -ExecutablePath $dockerExecutable `
             -Arguments @("volume", "rm", $SqlDataVolumeName) | Out-Null
     }
 
