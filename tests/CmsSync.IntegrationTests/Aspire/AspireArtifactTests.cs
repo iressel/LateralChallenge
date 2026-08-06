@@ -428,6 +428,17 @@ public sealed class AspireArtifactTests
             "### Optional local Aspire orchestration path",
             "## 6. Authentication and authorization contract");
 
+        Assert.Equal(
+            1,
+            Regex.Count(
+                readme,
+                "### Optional local Aspire orchestration path",
+                RegexOptions.CultureInvariant));
+        Assert.DoesNotContain(
+            "Optional local Aspire orchestration path (additional path; Compose remains supported):",
+            readme,
+            StringComparison.Ordinal);
+
         Assert.Contains("dotnet --version", aspireReadmeSection, StringComparison.Ordinal);
         Assert.Contains("docker version", aspireReadmeSection, StringComparison.Ordinal);
         Assert.Contains("aspire --version", aspireReadmeSection, StringComparison.Ordinal);
@@ -451,8 +462,27 @@ public sealed class AspireArtifactTests
         Assert.Contains("No operation group beginning with `#/components/tags/` should appear.", aspireReadmeSection, StringComparison.Ordinal);
         Assert.Contains("aspire certs clean", aspireReadmeSection, StringComparison.Ordinal);
         Assert.Contains("dotnet dev-certs https --clean", aspireReadmeSection, StringComparison.Ordinal);
-        Assert.Contains("pwsh ./scripts/stop-aspire-local.ps1", aspireReadmeSection, StringComparison.Ordinal);
-        Assert.Contains("pwsh ./scripts/stop-aspire-local.ps1 -RemoveData", aspireReadmeSection, StringComparison.Ordinal);
+
+        var stopResetSection = ExtractBlock(
+            aspireReadmeSection,
+            "#### 8. Stop or reset the environment",
+            "#### 9. Troubleshooting");
+
+        Assert.Contains(".\\scripts\\stop-aspire-local.ps1", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains(".\\scripts\\stop-aspire-local.ps1 -RemoveData", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains(
+            "PowerShell 7 users may equivalently prefix these commands with `pwsh`.",
+            aspireReadmeSection,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "PowerShell 7 (`pwsh`) is recommended; Windows PowerShell is supported.",
+            aspireReadmeSection,
+            StringComparison.Ordinal);
+        Assert.DoesNotMatch(
+            new Regex(
+                "(?m)^\\s*pwsh\\s+\\./scripts/stop-aspire-local\\.ps1(?:\\s+-RemoveData)?\\s*$",
+                RegexOptions.CultureInvariant),
+            stopResetSection);
         Assert.Contains("can remain running until `stop-aspire-local.ps1` removes the SQL container", aspireReadmeSection, StringComparison.Ordinal);
         Assert.Contains("Aspire remains optional and Compose remains independently supported.", aspireReadmeSection, StringComparison.Ordinal);
         Assert.Contains("No production deployment behavior changed and no seventh solution project was added.", aspireReadmeSection, StringComparison.Ordinal);

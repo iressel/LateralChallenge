@@ -94,13 +94,6 @@ docker compose up --build --wait
 docker compose ps
 ```
 
-Optional local Aspire orchestration path (additional path; Compose remains supported):
-
-```powershell
-pwsh ./scripts/configure-aspire-local.ps1
-aspire run --apphost ./apphost.cs
-```
-
 ### Optional local Aspire orchestration path
 
 This is an additional local path for developers who want to run the solution through .NET Aspire. Compose remains fully supported.
@@ -292,14 +285,16 @@ No operation group beginning with `#/components/tags/` should appear.
 Stop while retaining SQL data:
 
 ```powershell
-pwsh ./scripts/stop-aspire-local.ps1
+.\scripts\stop-aspire-local.ps1
 ```
 
 Complete reset including SQL data volume removal:
 
 ```powershell
-pwsh ./scripts/stop-aspire-local.ps1 -RemoveData
+.\scripts\stop-aspire-local.ps1 -RemoveData
 ```
+
+PowerShell 7 users may equivalently prefix these commands with `pwsh`.
 
 - `Ctrl+C` or `aspire stop` stops the AppHost process, API, dashboard, and session resources.
 - SQL uses persistent lifetime and can remain running until `stop-aspire-local.ps1` removes the SQL container.
