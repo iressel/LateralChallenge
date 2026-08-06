@@ -82,6 +82,7 @@ Compose and container artifacts:
 - [docs/container-development.md](docs/container-development.md)
 - [apphost.cs](apphost.cs)
 - [scripts/configure-aspire-local.ps1](scripts/configure-aspire-local.ps1)
+- [scripts/stop-aspire-local.ps1](scripts/stop-aspire-local.ps1)
 - [scripts/validate-aspire-setup.ps1](scripts/validate-aspire-setup.ps1)
 
 Supported local Compose path is x86-64:
@@ -97,14 +98,37 @@ Optional local Aspire orchestration path (additional path; Compose remains suppo
 
 ```powershell
 pwsh ./scripts/configure-aspire-local.ps1
+aspire run --apphost ./apphost.cs
+```
 
-aspire start --apphost ./apphost.cs --isolated --non-interactive
-aspire wait sql --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive
-aspire wait db-init --status down --timeout 480 --apphost ./apphost.cs --non-interactive
-aspire wait migration --status down --timeout 480 --apphost ./apphost.cs --non-interactive
-aspire wait api --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive
-aspire describe --apphost ./apphost.cs --format Json --non-interactive
-aspire stop --apphost ./apphost.cs --non-interactive
+Normal interactive behavior:
+
+- `aspire run --apphost ./apphost.cs` runs in the foreground.
+- The Aspire dashboard launches automatically and the terminal prints the dashboard login URL.
+- Wait until the `api` resource is Healthy, then open Swagger UI from the `api` resource link.
+- Use `CmsBasic` for `POST /cms/events`.
+- Use `ConsumerBasic` for `GET /api/entities` and `GET /api/entities/{entityId}`.
+- Use administrator credentials through `ConsumerBasic` for `PUT /api/entities/{entityId}/administrative-state`.
+- Stop the interactive run with `Ctrl+C` (or `aspire stop --apphost ./apphost.cs --non-interactive`).
+
+Stop versus reset for persistent AppHost SQL:
+
+```powershell
+pwsh ./scripts/stop-aspire-local.ps1
+pwsh ./scripts/stop-aspire-local.ps1 -RemoveData
+```
+
+- `Ctrl+C` or `aspire stop` stops the AppHost process, API, dashboard, and session resources.
+- SQL is configured with persistent lifetime and can remain running until `stop-aspire-local.ps1` removes the SQL container.
+- The named volume `cms-sync-aspire-sql-data` retains database data unless `-RemoveData` is supplied.
+- Do not run Compose and Aspire simultaneously on ports `8080` and `14333`.
+- Aspire remains optional and Compose remains independently supported.
+- No production deployment behavior changed and no seventh solution project was added.
+
+Advanced detached Aspire command for automation:
+
+```powershell
+aspire start --apphost ./apphost.cs --format Json
 ```
 
 Optional local API startup against an existing SQL Server:
@@ -127,6 +151,8 @@ Deterministic Aspire validation and cleanup:
 ```powershell
 pwsh ./scripts/validate-aspire-setup.ps1
 ```
+
+The validation script intentionally uses isolated process-only parameters and a unique validation volume so deterministic smoke checks do not alter normal local Aspire data.
 
 ## 6. Authentication and authorization contract
 

@@ -10,10 +10,15 @@ Add-Type -AssemblyName System.Net.Http
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $appHostPath = Join-Path $repositoryRoot "apphost.cs"
+$stopScriptPath = Join-Path $PSScriptRoot "stop-aspire-local.ps1"
 $requiredAspireVersionPrefix = "13.4.0"
 
 if (!(Test-Path -Path $appHostPath -PathType Leaf)) {
     throw "The AppHost file was not found at '$appHostPath'."
+}
+
+if (!(Test-Path -Path $stopScriptPath -PathType Leaf)) {
+    throw "The stop script was not found at '$stopScriptPath'."
 }
 
 $managedEnvironmentVariables = @(
@@ -344,50 +349,9 @@ function Assert-OpenApiPaths {
     }
 }
 
-function Stop-AspireAppHost {
-    $null = & aspire stop --apphost $appHostPath --non-interactive 1>$null 2>$null
-}
-
-function Remove-ContainersByName {
-    param(
-        [Parameter(Mandatory)]
-        [string[]] $ContainerNames
-    )
-
-    if ($ContainerNames.Count -eq 0) {
-        return
-    }
-
-    $names = $ContainerNames | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
-    if ($names.Count -eq 0) {
-        return
-    }
-
-    $allContainers = docker ps -a --format "{{.ID}} {{.Names}}"
-    $toRemove = @()
-
-    foreach ($line in $allContainers) {
-        $parts = $line -split " "
-        if ($parts.Length -lt 2) {
-            continue
-        }
-
-        $containerId = $parts[0]
-        $containerName = $parts[1]
-        if ($containerName -in $names) {
-            $toRemove += $containerId
-        }
-    }
-
-    if ($toRemove.Count -gt 0) {
-        docker rm -f $toRemove | Out-Null
-    }
-}
-
 $httpClient = $null
 $validationError = $null
 $validationVolumeName = "cms-sync-aspire-validation-$([Guid]::NewGuid().ToString('N').Substring(0, 12))"
-$resourceContainerNames = [Collections.Generic.List[string]]::new()
 
 try {
     $aspireVersion = Get-AspireVersion
@@ -418,7 +382,7 @@ try {
     [Environment]::SetEnvironmentVariable("Parameters__administrator-password", $administratorPassword, "Process")
     [Environment]::SetEnvironmentVariable("Aspire__SqlDataVolumeName", $validationVolumeName, "Process")
 
-    Stop-AspireAppHost
+    & $stopScriptPath -AppHostPath $appHostPath -SqlDataVolumeName $validationVolumeName -RemoveData
 
     $startOutput = Invoke-Aspire -Arguments @(
         "start",
@@ -455,10 +419,6 @@ try {
     $dbInitResource = Get-ResourceByDisplayName -Snapshot $snapshot -DisplayName "db-init"
     $migrationResource = Get-ResourceByDisplayName -Snapshot $snapshot -DisplayName "migration"
     $apiResource = Get-ResourceByDisplayName -Snapshot $snapshot -DisplayName "api"
-
-    $resourceContainerNames.Add($sqlResource.name)
-    $resourceContainerNames.Add($dbInitResource.name)
-    $resourceContainerNames.Add($migrationResource.name)
 
     if ($sqlResource.state -ne "Running" -or $sqlResource.healthStatus -ne "Healthy") {
         throw "The sql resource did not reach Running/Healthy state."
@@ -588,17 +548,7 @@ finally {
             $httpClient.Dispose()
         }
 
-        Stop-AspireAppHost
-
-        Remove-ContainersByName -ContainerNames $resourceContainerNames
-
-        if (docker volume ls --format "{{.Name}}" | Where-Object { $_ -eq $validationVolumeName }) {
-            docker volume rm $validationVolumeName | Out-Null
-        }
-
-        if (docker volume ls --format "{{.Name}}" | Where-Object { $_ -eq $validationVolumeName }) {
-            throw "Validation volume '$validationVolumeName' still exists after cleanup."
-        }
+        & $stopScriptPath -AppHostPath $appHostPath -SqlDataVolumeName $validationVolumeName -RemoveData
     }
     catch {
         if ($null -eq $validationError) {
