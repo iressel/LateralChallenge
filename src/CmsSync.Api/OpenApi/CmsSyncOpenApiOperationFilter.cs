@@ -63,7 +63,6 @@ public sealed class CmsSyncOpenApiOperationFilter : IOperationFilter
         operation.Description =
             "Accepts a raw JSON array of 1 through 50 CMS events. " +
             "On 500/503, retry the entire original request because earlier items may already be committed.";
-        operation.Tags = CreateTagSet("CMS Events");
 
         var webhookArraySchema = CreateWebhookArraySchema();
         var webhookExample = CreateWebhookArrayExample();
@@ -93,7 +92,6 @@ public sealed class CmsSyncOpenApiOperationFilter : IOperationFilter
         operation.Description =
             "Returns a role-scoped page of entities ordered by case-sensitive identifier. " +
             "Duplicate pageSize query values are invalid.";
-        operation.Tags = CreateTagSet("CMS Entities");
 
         operation.Parameters ??= new List<IOpenApiParameter>();
         UpsertParameter(
@@ -134,7 +132,6 @@ public sealed class CmsSyncOpenApiOperationFilter : IOperationFilter
         operation.Summary = "Get CMS entity by identifier";
         operation.Description =
             "Returns one role-visible entity. Hidden, deleted, and unknown entities are reported using the same non-disclosing 404 behavior.";
-        operation.Tags = CreateTagSet("CMS Entities");
 
         operation.Parameters ??= new List<IOpenApiParameter>();
         UpsertParameter(
@@ -161,7 +158,6 @@ public sealed class CmsSyncOpenApiOperationFilter : IOperationFilter
             "Requires ConsumerBasic authentication with the Administrator role. " +
             "A normal consumer receives 403 without a challenge. " +
             "The request property name is case-sensitive and must be Disabled.";
-        operation.Tags = CreateTagSet("CMS Entities");
 
         operation.Parameters ??= new List<IOpenApiParameter>();
         UpsertParameter(
@@ -398,13 +394,5 @@ public sealed class CmsSyncOpenApiOperationFilter : IOperationFilter
         }
 
         parameters.Add(parameter);
-    }
-
-    private static HashSet<OpenApiTagReference> CreateTagSet(string tagName)
-    {
-        return new HashSet<OpenApiTagReference>
-        {
-            new OpenApiTagReference(tagName, hostDocument: null!, externalResource: string.Empty),
-        };
     }
 }

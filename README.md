@@ -101,27 +101,279 @@ pwsh ./scripts/configure-aspire-local.ps1
 aspire run --apphost ./apphost.cs
 ```
 
-Normal interactive behavior:
+### Optional local Aspire orchestration path
 
-- `aspire run --apphost ./apphost.cs` runs in the foreground.
-- The Aspire dashboard launches automatically and the terminal prints the dashboard login URL.
-- Wait until the `api` resource is Healthy, then open Swagger UI from the `api` resource link.
+This is an additional local path for developers who want to run the solution through .NET Aspire. Compose remains fully supported.
+
+#### 1. Prerequisites
+
+- Use the SDK pinned by [global.json](global.json): .NET SDK `10.0.302`.
+- Start Docker Desktop (or a compatible Docker runtime) before running Aspire.
+- Use Aspire CLI `13.4.0`.
+- PowerShell 7 (`pwsh`) is recommended; Windows PowerShell is supported.
+- Use a supported x86-64 SQL Server container host.
+- Do not run Compose and Aspire at the same time on ports `8080` and `14333`.
+
+Check local prerequisites:
+
+```powershell
+dotnet --version
+docker version
+aspire --version
+aspire doctor
+```
+
+Repository Aspire dependencies are intentionally pinned to `13.4.0`. Do not update repository Aspire packages as part of local startup.
+
+#### 2. PowerShell options
+
+Preferred command:
+
+```powershell
+pwsh ./scripts/configure-aspire-local.ps1
+```
+
+If `pwsh` is not recognized, use Windows PowerShell for the current terminal process only:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\configure-aspire-local.ps1
+```
+
+Alternative Windows PowerShell invocation:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+	-File .\scripts\configure-aspire-local.ps1
+```
+
+Process-scoped `Bypass` affects only the current terminal session.
+
+#### 3. First-time certificate preparation
+
+For first-run certificate trust:
+
+```powershell
+dotnet dev-certs https --check --trust
+aspire certs trust
+aspire doctor
+```
+
+- Accept the Windows certificate trust prompt.
+- Continue only after the development HTTPS certificate is trusted.
+- These certificate commands do not create application credentials.
+
+Certificate cleaning is troubleshooting guidance, not normal startup.
+
+#### 4. Configure local secrets
+
+Run:
+
+```powershell
+.\scripts\configure-aspire-local.ps1
+```
+
+The script prompts for these usernames:
+
+- `cms-username`
+- `consumer-username`
+- `administrator-username`
+
+It creates or reuses these secret values:
+
+- `mssql-sa-password`
+- `migration-sql-password`
+- `write-sql-password`
+- `read-sql-password`
+- `cms-password`
+- `consumer-password`
+- `administrator-password`
+
+Notes:
+
+- Secrets are stored in the local Aspire secret store.
+- Credentials are not written to README, appsettings, `.env`, or Git.
+- Passwords are not printed after they are saved.
+- If actor passwords already exist and `-RotateSecrets` is not used, the script may prompt only for the three usernames and then complete. This is expected.
+
+If you do not know the stored Swagger passwords, rotate them:
+
+```powershell
+.\scripts\configure-aspire-local.ps1 -RotateSecrets
+```
+
+Rotation rules:
+
+- Each actor password must be a distinct GUID in `D` format.
+- Secure prompts may show no characters or only asterisks.
+- Store credentials securely for later Swagger authorization.
+
+Safe local GUID generation command:
+
+```powershell
+[guid]::NewGuid().ToString("D")
+```
+
+Swagger authentication mapping:
+
+- `CmsBasic`: `cms-username` / `cms-password`
+- `ConsumerBasic` read access: `consumer-username` / `consumer-password`
+- `ConsumerBasic` administrator access: `administrator-username` / `administrator-password`
+
+The four SQL passwords are internal container/service credentials and are not entered in Swagger.
+
+#### 5. Start Aspire
+
+Start the app host:
+
+```powershell
+aspire run --apphost .\apphost.cs
+```
+
+Behavior:
+
+- The run is a foreground process.
+- The terminal prints a dashboard Panel URL.
+- Open the complete URL including `/login?t=...`.
+- Opening only the localhost root may not authenticate a fresh browser session.
+- Do not share dashboard tokenized URLs.
+- Do not hard-code dashboard port `17193`.
+
+#### 6. Verify the resource graph
+
+Expected resources:
+
+- `sql`
+- `db-init`
+- `migration`
+- `api`
+
+Expected lifecycle states:
+
+- `sql`: Running and healthy.
+- `db-init`: Exited successfully.
+- `migration`: Exited successfully.
+- `api`: Running and healthy.
+
+`db-init` and `migration` are one-shot resources, so `Exited` is expected when they finish successfully.
+
+Expected graph:
+
+- `sql` -> `db-init` -> `migration` -> `api`
+
+#### 7. Open Swagger
+
+After `api` is healthy:
+
+- Open Swagger UI from the `api` resource in the dashboard; or
+- Open `http://localhost:8080/swagger` directly.
+
+Health URLs:
+
+- `http://localhost:8080/health/live`
+- `http://localhost:8080/health/ready`
+
+Authentication usage:
+
 - Use `CmsBasic` for `POST /cms/events`.
-- Use `ConsumerBasic` for `GET /api/entities` and `GET /api/entities/{entityId}`.
-- Use administrator credentials through `ConsumerBasic` for `PUT /api/entities/{entityId}/administrative-state`.
-- Stop the interactive run with `Ctrl+C` (or `aspire stop --apphost ./apphost.cs --non-interactive`).
+- Use `ConsumerBasic` with consumer credentials for read endpoints.
+- Use `ConsumerBasic` with administrator credentials for `PUT /api/entities/{entityId}/administrative-state`.
+- Swagger authorization remains in the current browser session.
 
-Stop versus reset for persistent AppHost SQL:
+Expected operation groups in Swagger UI:
+
+- `CmsEntities`
+- `CmsEvents`
+
+No operation group beginning with `#/components/tags/` should appear.
+
+#### 8. Stop or reset the environment
+
+Stop while retaining SQL data:
 
 ```powershell
 pwsh ./scripts/stop-aspire-local.ps1
+```
+
+Complete reset including SQL data volume removal:
+
+```powershell
 pwsh ./scripts/stop-aspire-local.ps1 -RemoveData
 ```
 
 - `Ctrl+C` or `aspire stop` stops the AppHost process, API, dashboard, and session resources.
-- SQL is configured with persistent lifetime and can remain running until `stop-aspire-local.ps1` removes the SQL container.
-- The named volume `cms-sync-aspire-sql-data` retains database data unless `-RemoveData` is supplied.
-- Do not run Compose and Aspire simultaneously on ports `8080` and `14333`.
+- SQL uses persistent lifetime and can remain running until `stop-aspire-local.ps1` removes the SQL container.
+- The named volume `cms-sync-aspire-sql-data` retains data unless `-RemoveData` is supplied.
+
+#### 9. Troubleshooting
+
+Troubleshooting: blank dashboard or certificate trust failures
+
+Possible symptoms:
+
+- blank dashboard
+- Resources stuck at Loading
+- "An unhandled error has occurred"
+- `UntrustedRoot`
+- "SSL connection could not be established"
+- "connection is not in Connected state"
+
+Recovery steps:
+
+```powershell
+# Stop the foreground run with Ctrl+C first
+.\scripts\stop-aspire-local.ps1
+
+aspire certs clean
+aspire certs trust
+aspire doctor
+```
+
+Then:
+
+- Accept the Windows certificate prompt.
+- Verify certificate trust succeeds.
+- Close all browser windows.
+- Open a new terminal.
+- Run Aspire again.
+- Open the new complete Panel URL including `/login?t=...`.
+
+Important warnings:
+
+- `aspire certs clean` is a troubleshooting reset, not a normal startup step.
+- It removes local Aspire development certificates.
+
+Last resort:
+
+```powershell
+dotnet dev-certs https --clean
+dotnet dev-certs https --trust
+aspire certs trust
+aspire doctor
+```
+
+`dotnet dev-certs https --clean` removes all ASP.NET Core HTTPS development certificates for the current user.
+
+Troubleshooting: `pwsh` missing
+
+Example symptom:
+
+```text
+pwsh: The term 'pwsh' is not recognized
+```
+
+Meaning and options:
+
+- PowerShell 7 is not installed or not on PATH.
+- Use the Windows PowerShell fallback commands above.
+- Optionally install PowerShell 7 and verify with:
+
+```powershell
+pwsh --version
+```
+
+PowerShell 7 remains recommended, not mandatory.
+
 - Aspire remains optional and Compose remains independently supported.
 - No production deployment behavior changed and no seventh solution project was added.
 
