@@ -1,9 +1,14 @@
 [CmdletBinding()]
 param(
     [switch] $RotateSecrets,
-    [string] $CmsUsername = "cmssvc-local1",
-    [string] $ConsumerUsername = "consumer-local1",
-    [string] $AdministratorUsername = "admin-local1"
+    [AllowNull()]
+    [string] $CmsUsername = $null,
+
+    [AllowNull()]
+    [string] $ConsumerUsername = $null,
+
+    [AllowNull()]
+    [string] $AdministratorUsername = $null
 )
 
 Set-StrictMode -Version Latest
@@ -102,10 +107,6 @@ function New-SqlPassword {
     }
 }
 
-function New-GuidPassword {
-    return [Guid]::NewGuid().ToString("D")
-}
-
 function Assert-ValidSqlPassword {
     param(
         [Parameter(Mandatory)]
@@ -129,7 +130,7 @@ function Assert-ValidSqlPassword {
     }
 }
 
-function Assert-ValidGuidPassword {
+function Convert-ToGuidD {
     param(
         [Parameter(Mandatory)]
         [string] $Name,
@@ -142,6 +143,8 @@ function Assert-ValidGuidPassword {
     if (![Guid]::TryParseExact($Value, "D", [ref] $guidValue)) {
         throw "Parameter '$Name' must use GUID D format."
     }
+
+    return $guidValue
 }
 
 function Assert-ValidUsername {
@@ -183,8 +186,82 @@ function Assert-DistinctValues {
         [string[]] $Values
     )
 
-    if ($Values.Length -ne ($Values | Select-Object -Unique).Length) {
-        throw $ErrorMessage
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($value in $Values) {
+        if (!$seen.Add($value)) {
+            throw $ErrorMessage
+        }
+    }
+}
+
+function Resolve-RequiredUsername {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [AllowNull()]
+        [string] $Value,
+
+        [int] $MinimumLength = 1,
+
+        [int] $MaximumLength = 128
+    )
+
+    $resolvedValue = $Value
+    if ([string]::IsNullOrWhiteSpace($resolvedValue)) {
+        $resolvedValue = Read-Host -Prompt "Enter value for '$Name'"
+    }
+
+    Assert-ValidUsername `
+        -Name $Name `
+        -Value $resolvedValue `
+        -MinimumLength $MinimumLength `
+        -MaximumLength $MaximumLength
+
+    return $resolvedValue
+}
+
+function Read-GuidPasswordFromPrompt {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $secureValue = $null
+    $bstr = [IntPtr]::Zero
+    $plaintext = $null
+    $plaintextCharacters = $null
+
+    try {
+        $secureValue = Read-Host -Prompt "Enter value for '$Name' (GUID D format)" -AsSecureString
+        if ($null -eq $secureValue) {
+            throw "Parameter '$Name' is required."
+        }
+
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureValue)
+        $plaintext = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        if ([string]::IsNullOrWhiteSpace($plaintext)) {
+            throw "Parameter '$Name' is required."
+        }
+
+        $plaintextCharacters = $plaintext.ToCharArray()
+        $candidate = [string]::new($plaintextCharacters)
+        return Convert-ToGuidD -Name $Name -Value $candidate
+    }
+    finally {
+        if ($null -ne $plaintextCharacters) {
+            [Array]::Clear($plaintextCharacters, 0, $plaintextCharacters.Length)
+        }
+
+        $plaintext = $null
+
+        if ($bstr -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        }
+
+        if ($secureValue -is [IDisposable]) {
+            $secureValue.Dispose()
+        }
     }
 }
 
@@ -213,12 +290,29 @@ function Resolve-SecretValue {
     return $value
 }
 
+function Resolve-ActorPassword {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    if (!$RotateSecrets) {
+        $existing = Get-ExistingParameterSecret -Name $Name
+        if (!([string]::IsNullOrWhiteSpace($existing))) {
+            return (Convert-ToGuidD -Name $Name -Value $existing).ToString("D")
+        }
+    }
+
+    return (Read-GuidPasswordFromPrompt -Name $Name).ToString("D")
+}
+
 $aspireVersion = Get-AspireVersion
 Assert-AspireVersion -Version $aspireVersion -ExpectedPrefix $requiredAspireVersionPrefix
 
-Assert-ValidUsername -Name "cms-username" -Value $CmsUsername -MinimumLength 10 -MaximumLength 20
-Assert-ValidUsername -Name "consumer-username" -Value $ConsumerUsername
-Assert-ValidUsername -Name "administrator-username" -Value $AdministratorUsername
+$CmsUsername = Resolve-RequiredUsername -Name "cms-username" -Value $CmsUsername -MinimumLength 10 -MaximumLength 20
+$ConsumerUsername = Resolve-RequiredUsername -Name "consumer-username" -Value $ConsumerUsername
+$AdministratorUsername = Resolve-RequiredUsername -Name "administrator-username" -Value $AdministratorUsername
+
 Assert-DistinctValues `
     -ErrorMessage "CMS, consumer, and administrator usernames must be distinct." `
     -Values @($CmsUsername, $ConsumerUsername, $AdministratorUsername)
@@ -240,18 +334,9 @@ $readSqlPassword = Resolve-SecretValue `
     -Generator { New-SqlPassword } `
     -Validator ${function:Assert-ValidSqlPassword}
 
-$cmsPassword = Resolve-SecretValue `
-    -Name "cms-password" `
-    -Generator { New-GuidPassword } `
-    -Validator ${function:Assert-ValidGuidPassword}
-$consumerPassword = Resolve-SecretValue `
-    -Name "consumer-password" `
-    -Generator { New-GuidPassword } `
-    -Validator ${function:Assert-ValidGuidPassword}
-$administratorPassword = Resolve-SecretValue `
-    -Name "administrator-password" `
-    -Generator { New-GuidPassword } `
-    -Validator ${function:Assert-ValidGuidPassword}
+$cmsPassword = Resolve-ActorPassword -Name "cms-password"
+$consumerPassword = Resolve-ActorPassword -Name "consumer-password"
+$administratorPassword = Resolve-ActorPassword -Name "administrator-password"
 
 Assert-DistinctValues `
     -ErrorMessage "SQL passwords must be distinct." `
@@ -272,12 +357,5 @@ Set-ParameterSecret -Name "consumer-password" -Value $consumerPassword
 Set-ParameterSecret -Name "administrator-username" -Value $AdministratorUsername
 Set-ParameterSecret -Name "administrator-password" -Value $administratorPassword
 
-$secretPathOutput = & aspire secret path --apphost $appHostPath --non-interactive
-if ($LASTEXITCODE -ne 0) {
-    throw "Configured secrets successfully, but failed to resolve Aspire secret path."
-}
-
-$secretPath = ($secretPathOutput | Select-Object -First 1).Trim()
 Write-Output "Aspire local secrets configured for apphost.cs."
-Write-Output "Secrets file path: $secretPath"
 Write-Output "Configured parameters: mssql-sa-password, migration-sql-password, write-sql-password, read-sql-password, cms-username, cms-password, consumer-username, consumer-password, administrator-username, administrator-password."

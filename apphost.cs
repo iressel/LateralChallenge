@@ -1,7 +1,7 @@
 #:sdk Aspire.AppHost.Sdk@13.4.0
 #:property ManagePackageVersionsCentrally=false
-#:property NuGetAudit=false
 #:package Aspire.Hosting.SqlServer@13.4.0
+#:package MessagePack@3.1.8
 
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
@@ -13,7 +13,6 @@ const string SqlServerImageTag = "2022-CU26-ubuntu-22.04";
 const string SqlServerImageSha256 = "ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89";
 const string DefaultSqlDataVolumeName = "cms-sync-aspire-sql-data";
 const string ApiAspNetCoreUrls = "http://+:8080";
-const string SqlServerHostAddress = "127.0.0.1";
 const int SqlServerHostPort = 14333;
 const int ApiHttpPort = 8080;
 
@@ -36,9 +35,6 @@ var consumerUsername = builder.AddParameter("consumer-username", secret: true);
 var consumerPassword = builder.AddParameter("consumer-password", secret: true);
 var administratorUsername = builder.AddParameter("administrator-username", secret: true);
 var administratorPassword = builder.AddParameter("administrator-password", secret: true);
-
-var writeSqlPasswordValue = GetRequiredParameterValue(builder.Configuration, "write-sql-password");
-var readSqlPasswordValue = GetRequiredParameterValue(builder.Configuration, "read-sql-password");
 
 var sql = builder.AddSqlServer("sql", mssqlSaPassword, port: SqlServerHostPort)
     .WithImage(SqlServerImageRepository, SqlServerImageTag)
@@ -64,19 +60,21 @@ var migration = builder.AddDockerfile("migration", ".", "Dockerfile", "migration
     .WithEnvironment("MIGRATION_SQL_PASSWORD", migrationSqlPassword)
     .WaitForCompletion(dbInit);
 
-var sqlPort = sql.Resource.PrimaryEndpoint.Property(EndpointProperty.Port);
+var sqlEndpoint = sql.Resource.PrimaryEndpoint;
+
+var writeConnectionString = ReferenceExpression.Create(
+    $"Server={sqlEndpoint.Property(EndpointProperty.IPV4Host)},{sqlEndpoint.Property(EndpointProperty.Port)};Database=CmsSync;User ID=CmsSyncWriter;Password={writeSqlPassword};Encrypt=True;TrustServerCertificate=True;Persist Security Info=False");
+
+var readConnectionString = ReferenceExpression.Create(
+    $"Server={sqlEndpoint.Property(EndpointProperty.IPV4Host)},{sqlEndpoint.Property(EndpointProperty.Port)};Database=CmsSync;User ID=CmsSyncReader;Password={readSqlPassword};Encrypt=True;TrustServerCertificate=True;Persist Security Info=False;ApplicationIntent=ReadOnly");
 
 builder.AddProject("api", "src/CmsSync.Api/CmsSync.Api.csproj")
     .WithHttpEndpoint(targetPort: ApiHttpPort, port: ApiHttpPort, name: "http", isProxied: false)
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", "Development")
     .WithEnvironment("ASPNETCORE_URLS", ApiAspNetCoreUrls)
     .WithEnvironment("RestoreSources", "https://api.nuget.org/v3/index.json")
-    .WithEnvironment(
-        "ConnectionStrings__WriteDatabase",
-        $"Server={SqlServerHostAddress},{sqlPort};Database=CmsSync;User ID=CmsSyncWriter;Password={writeSqlPasswordValue};Encrypt=True;TrustServerCertificate=True;Persist Security Info=False")
-    .WithEnvironment(
-        "ConnectionStrings__ReadDatabase",
-        $"Server={SqlServerHostAddress},{sqlPort};Database=CmsSync;User ID=CmsSyncReader;Password={readSqlPasswordValue};Encrypt=True;TrustServerCertificate=True;Persist Security Info=False;ApplicationIntent=ReadOnly")
+    .WithEnvironment("ConnectionStrings__WriteDatabase", writeConnectionString)
+    .WithEnvironment("ConnectionStrings__ReadDatabase", readConnectionString)
     .WithEnvironment("Authentication__Credentials__Cms__Username", cmsUsername)
     .WithEnvironment("Authentication__Credentials__Cms__Password", cmsPassword)
     .WithEnvironment("Authentication__Credentials__Consumer__Username", consumerUsername)
@@ -92,16 +90,3 @@ builder.AddProject("api", "src/CmsSync.Api/CmsSync.Api.csproj")
     .WithUrlForEndpoint("http", _ => new ResourceUrlAnnotation { Url = "/health/ready", DisplayText = "Readiness" });
 
 builder.Build().Run();
-
-static string GetRequiredParameterValue(
-    Microsoft.Extensions.Configuration.ConfigurationManager configuration,
-    string parameterName)
-{
-    var value = configuration[$"Parameters:{parameterName}"];
-    if (string.IsNullOrWhiteSpace(value))
-    {
-        throw new InvalidOperationException($"Missing required parameter value '{parameterName}'.");
-    }
-
-    return value;
-}

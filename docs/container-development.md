@@ -23,11 +23,28 @@ The Aspire AppHost path is an additional local workflow. It does not replace Doc
 
 1. Confirm Aspire CLI 13.4.0 is available: `aspire --version`.
 2. Configure local Aspire secrets: `pwsh ./scripts/configure-aspire-local.ps1`.
-3. Start an isolated local Aspire run: `aspire start --apphost ./apphost.cs --isolated --non-interactive`.
-4. Check chained readiness: `aspire wait sql --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive`, `aspire wait db-init --status down --timeout 480 --apphost ./apphost.cs --non-interactive`, `aspire wait migration --status down --timeout 480 --apphost ./apphost.cs --non-interactive`, and `aspire wait api --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive`.
-5. Verify orchestration state and endpoints through AppHost output: `aspire describe --apphost ./apphost.cs --format Json --non-interactive`.
-6. Run deterministic Aspire smoke validation and cleanup: `pwsh ./scripts/validate-aspire-setup.ps1`.
-7. Stop AppHost resources after manual runs: `aspire stop --apphost ./apphost.cs --non-interactive`.
+3. Start the normal interactive run: `aspire run --apphost ./apphost.cs`.
+4. Use the printed dashboard login URL, wait for `api` to become Healthy, and open Swagger UI from the `api` resource links.
+5. Use `CmsBasic` for `POST /cms/events`; use `ConsumerBasic` for entity reads and administrator updates.
+6. Stop the interactive run with `Ctrl+C` (or `aspire stop --apphost ./apphost.cs --non-interactive`).
+7. Stop AppHost plus persistent SQL container while retaining SQL data: `pwsh ./scripts/stop-aspire-local.ps1`.
+8. Reset AppHost SQL data completely: `pwsh ./scripts/stop-aspire-local.ps1 -RemoveData`.
+
+Persistent resource notes:
+
+- `Ctrl+C` or `aspire stop` stops the AppHost process, API, dashboard, and session resources.
+- SQL uses persistent lifetime and can continue running until `stop-aspire-local.ps1` removes the SQL container.
+- The named volume `cms-sync-aspire-sql-data` retains data unless `-RemoveData` is provided.
+- Do not run Compose and Aspire simultaneously on ports `8080` and `14333`.
+- Aspire remains optional, Compose remains independently supported, and no production deployment behavior changed.
+
+Advanced detached command for automation:
+
+- `aspire start --apphost ./apphost.cs --format Json`
+
+Deterministic validation:
+
+- `pwsh ./scripts/validate-aspire-setup.ps1` intentionally uses `aspire start --isolated --non-interactive`, process-only parameters, and a unique validation volume.
 
 ## Apple Silicon
 
