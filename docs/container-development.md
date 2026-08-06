@@ -17,6 +17,18 @@ The named `cms-sync-sql-data` volume persists `/var/opt/mssql` across ordinary s
 
 For the deterministic clean-volume verification used by this task and reusable by CI, run `pwsh ./scripts/validate-container-setup.ps1`. The script generates all credentials in memory, validates liveness/readiness, migration history, SQL permissions, an authenticated consumer read, and a real webhook write, then always removes project containers and volumes.
 
+## Optional Aspire local orchestration path
+
+The Aspire AppHost path is an additional local workflow. It does not replace Docker Compose support.
+
+1. Confirm Aspire CLI 13.4.0 is available: `aspire --version`.
+2. Configure local Aspire secrets: `pwsh ./scripts/configure-aspire-local.ps1`.
+3. Start an isolated local Aspire run: `aspire start --apphost ./apphost.cs --isolated --non-interactive`.
+4. Check chained readiness: `aspire wait sql --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive`, `aspire wait db-init --status down --timeout 480 --apphost ./apphost.cs --non-interactive`, `aspire wait migration --status down --timeout 480 --apphost ./apphost.cs --non-interactive`, and `aspire wait api --status healthy --timeout 480 --apphost ./apphost.cs --non-interactive`.
+5. Verify orchestration state and endpoints through AppHost output: `aspire describe --apphost ./apphost.cs --format Json --non-interactive`.
+6. Run deterministic Aspire smoke validation and cleanup: `pwsh ./scripts/validate-aspire-setup.ps1`.
+7. Stop AppHost resources after manual runs: `aspire stop --apphost ./apphost.cs --non-interactive`.
+
 ## Apple Silicon
 
 The SQL Server Linux container path is not supported through Rosetta, QEMU, or any other emulation or translation layer. Do not add `platform: linux/amd64` as a workaround. SQL Server Testcontainers are not the local verification path on Apple Silicon.
