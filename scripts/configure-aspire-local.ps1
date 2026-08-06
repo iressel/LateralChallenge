@@ -22,10 +22,22 @@ if (!(Test-Path -Path $appHostPath -PathType Leaf)) {
     throw "The AppHost file was not found at '$appHostPath'."
 }
 
+$aspireCommand = Get-Command `
+    -Name "aspire" `
+    -CommandType Application `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+
+if ($null -eq $aspireCommand) {
+    throw "The Aspire CLI is required but was not found in PATH."
+}
+
+$aspireExecutable = $aspireCommand.Source
+
 function Get-AspireVersion {
-    $versionOutput = & aspire --version 2>$null
+    $versionOutput = & $aspireExecutable --version 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "The Aspire CLI is required but was not found in PATH."
+        throw "The Aspire CLI did not return a version string."
     }
 
     $firstLine = ($versionOutput | Select-Object -First 1)
@@ -59,7 +71,7 @@ function Get-ExistingParameterSecret {
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        $secretOutput = & aspire secret get "Parameters:$Name" --apphost $appHostPath --non-interactive 2>$null
+        $secretOutput = & $aspireExecutable secret get "Parameters:$Name" --apphost $appHostPath --non-interactive 2>$null
         $secretExitCode = $LASTEXITCODE
     }
     finally {
@@ -87,7 +99,7 @@ function Set-ParameterSecret {
         [string] $Value
     )
 
-    & aspire secret set "Parameters:$Name" $Value --apphost $appHostPath --non-interactive 1>$null
+    & $aspireExecutable secret set "Parameters:$Name" $Value --apphost $appHostPath --non-interactive 1>$null
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to set secret value for parameter '$Name'."
     }

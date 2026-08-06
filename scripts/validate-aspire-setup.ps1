@@ -21,6 +21,18 @@ if (!(Test-Path -Path $stopScriptPath -PathType Leaf)) {
     throw "The stop script was not found at '$stopScriptPath'."
 }
 
+$aspireCommand = Get-Command `
+    -Name "aspire" `
+    -CommandType Application `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+
+if ($null -eq $aspireCommand) {
+    throw "The Aspire CLI is required but was not found in PATH."
+}
+
+$aspireExecutable = $aspireCommand.Source
+
 $managedEnvironmentVariables = @(
     "Parameters__mssql-sa-password",
     "Parameters__migration-sql-password",
@@ -43,9 +55,9 @@ foreach ($variableName in $managedEnvironmentVariables) {
 }
 
 function Get-AspireVersion {
-    $versionOutput = & aspire --version 2>$null
+    $versionOutput = & $aspireExecutable --version 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "The Aspire CLI is required but was not found in PATH."
+        throw "The Aspire CLI did not return a version string."
     }
 
     $firstLine = ($versionOutput | Select-Object -First 1)
@@ -85,10 +97,10 @@ function Invoke-Aspire {
         $ErrorActionPreference = "Continue"
 
         if ($CaptureOutput) {
-            $output = & aspire @Arguments
+            $output = & $aspireExecutable @Arguments
         }
         else {
-            & aspire @Arguments
+            & $aspireExecutable @Arguments
             $output = @()
         }
 
@@ -99,7 +111,7 @@ function Invoke-Aspire {
     }
 
     if (!$AllowFailure -and $exitCode -ne 0) {
-        throw "Aspire command failed: aspire $($Arguments -join ' ')"
+        throw "Aspire command failed: $aspireExecutable $($Arguments -join ' ')"
     }
 
     $global:LASTEXITCODE = $exitCode

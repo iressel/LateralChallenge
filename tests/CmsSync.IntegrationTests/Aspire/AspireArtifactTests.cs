@@ -7,6 +7,7 @@ namespace CmsSync.IntegrationTests.Aspire;
 public sealed class AspireArtifactTests
 {
     private const string ExpectedAspireVersion = "13.4.0";
+    private const string ExpectedMessagePackVersion = "3.1.8";
     private const string ExpectedSqlImageTag = "2022-CU26-ubuntu-22.04";
     private const string ExpectedSqlImageSha256 = "ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89";
     private const string ExpectedSqlDataVolumeName = "cms-sync-aspire-sql-data";
@@ -43,24 +44,63 @@ public sealed class AspireArtifactTests
             appHost,
             @"(?m)^#:sdk\s+Aspire\.AppHost\.Sdk@([^\r\n]+)\s*$",
             "Aspire AppHost SDK directive");
-        var sqlHostingVersion = ReadDirectiveVersion(
-            appHost,
-            @"(?m)^#:package\s+Aspire\.Hosting\.SqlServer@([^\r\n]+)\s*$",
-            "Aspire SqlServer package directive");
-
         Assert.Equal(ExpectedAspireVersion, sdkVersion);
-        Assert.Equal(ExpectedAspireVersion, sqlHostingVersion);
         Assert.Equal(
             1,
             Regex.Count(appHost, @"(?m)^#:sdk\s+Aspire\.AppHost\.Sdk@", RegexOptions.CultureInvariant));
-        Assert.Equal(
-            1,
-            Regex.Count(appHost, @"(?m)^#:package\s+Aspire\.Hosting\.SqlServer@", RegexOptions.CultureInvariant));
+        AssertStableDirectiveVersion(sdkVersion, "Aspire.AppHost.Sdk");
 
-        Assert.Matches(@"^\d+\.\d+\.\d+$", sdkVersion);
-        Assert.Matches(@"^\d+\.\d+\.\d+$", sqlHostingVersion);
-        Assert.DoesNotContain("*", sdkVersion, StringComparison.Ordinal);
-        Assert.DoesNotContain("*", sqlHostingVersion, StringComparison.Ordinal);
+        var packageDirectiveMatches = Regex.Matches(
+            appHost,
+            @"(?m)^#:package\s+([A-Za-z0-9.\-]+)@([^\r\n]+)\s*$",
+            RegexOptions.CultureInvariant);
+
+        var packageDirectives = packageDirectiveMatches
+            .Select(match => (
+                Name: match.Groups[1].Value.Trim(),
+                Version: match.Groups[2].Value.Trim()))
+            .ToArray();
+
+        var sqlHostingDirectives = packageDirectives
+            .Where(directive => directive.Name.Equals("Aspire.Hosting.SqlServer", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Single(sqlHostingDirectives);
+        Assert.Equal(ExpectedAspireVersion, sqlHostingDirectives[0].Version);
+
+        foreach (var packageDirective in packageDirectives)
+        {
+            AssertStableDirectiveVersion(
+                packageDirective.Version,
+                $"package {packageDirective.Name}");
+        }
+
+        var messagePackDirectives = packageDirectives
+            .Where(directive => directive.Name.Equals("MessagePack", StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(messagePackDirectives.Length <= 1, "Expected at most one MessagePack package directive.");
+
+        if (messagePackDirectives.Length == 1)
+        {
+            Assert.Equal(ExpectedMessagePackVersion, messagePackDirectives[0].Version);
+
+            AssertExactSet(
+                packageDirectives.Select(directive => directive.Name),
+                ["Aspire.Hosting.SqlServer", "MessagePack"],
+                "AppHost package directives");
+
+            Assert.Contains("Security pin", appHost, StringComparison.Ordinal);
+            Assert.Contains("NuGet Audit enabled", appHost, StringComparison.Ordinal);
+            Assert.Contains("MessagePack 2.5.192", appHost, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain("#:package MessagePack@", appHost, StringComparison.Ordinal);
+            AssertExactSet(
+                packageDirectives.Select(directive => directive.Name),
+                ["Aspire.Hosting.SqlServer"],
+                "AppHost package directives");
+        }
+
         Assert.DoesNotContain("#:property NuGetAudit=false", appHost, StringComparison.Ordinal);
     }
 
@@ -235,6 +275,34 @@ public sealed class AspireArtifactTests
         Assert.Contains("Get-ExistingParameterSecret -Name $Name", configureScript, StringComparison.Ordinal);
         Assert.Contains("Actor passwords must be distinct.", configureScript, StringComparison.Ordinal);
 
+        var configureAspireResolutionBlock = ExtractBlock(
+            configureScript,
+            "$aspireCommand = Get-Command",
+            "function Get-AspireVersion {");
+
+        Assert.Contains("-Name \"aspire\"", configureAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("-CommandType Application", configureAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("-ErrorAction SilentlyContinue", configureAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("Select-Object -First 1", configureAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("throw \"The Aspire CLI is required but was not found in PATH.\"", configureAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("$aspireExecutable = $aspireCommand.Source", configureAspireResolutionBlock, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("& aspire", configureScript, StringComparison.Ordinal);
+
+        var configureResolveIndex = configureScript.IndexOf(
+            "$aspireExecutable = $aspireCommand.Source",
+            StringComparison.Ordinal);
+        var configureVersionCallIndex = configureScript.IndexOf(
+            "$aspireVersion = Get-AspireVersion",
+            StringComparison.Ordinal);
+        var configureFirstAspireInvocationIndex = configureScript.IndexOf(
+            "& $aspireExecutable",
+            StringComparison.Ordinal);
+
+        Assert.True(configureResolveIndex >= 0, "Configure script does not resolve Aspire executable.");
+        Assert.True(configureVersionCallIndex > configureResolveIndex, "Configure script calls Get-AspireVersion before Aspire executable resolution.");
+        Assert.True(configureFirstAspireInvocationIndex > configureResolveIndex, "Configure script invokes Aspire before executable resolution.");
+
         Assert.DoesNotContain("aspire secret path", configureScript, StringComparison.Ordinal);
         Assert.DoesNotContain("Secrets file path:", configureScript, StringComparison.Ordinal);
         Assert.DoesNotMatch(
@@ -283,6 +351,71 @@ public sealed class AspireArtifactTests
 
         Assert.DoesNotContain("docker volume rm $validationVolumeName", validateScript, StringComparison.Ordinal);
         Assert.DoesNotContain(ExpectedSqlDataVolumeName, validateScript, StringComparison.Ordinal);
+
+        var validateAspireResolutionBlock = ExtractBlock(
+            validateScript,
+            "$aspireCommand = Get-Command",
+            "function Get-AspireVersion {");
+
+        Assert.Contains("-Name \"aspire\"", validateAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("-CommandType Application", validateAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("-ErrorAction SilentlyContinue", validateAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("Select-Object -First 1", validateAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("throw \"The Aspire CLI is required but was not found in PATH.\"", validateAspireResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("$aspireExecutable = $aspireCommand.Source", validateAspireResolutionBlock, StringComparison.Ordinal);
+
+        Assert.Contains("& $aspireExecutable @Arguments", validateScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("& aspire", validateScript, StringComparison.Ordinal);
+
+        var validateResolveIndex = validateScript.IndexOf(
+            "$aspireExecutable = $aspireCommand.Source",
+            StringComparison.Ordinal);
+        var validateFirstAspireInvocationIndex = validateScript.IndexOf(
+            "& $aspireExecutable",
+            StringComparison.Ordinal);
+
+        Assert.True(validateResolveIndex >= 0, "Validate script does not resolve Aspire executable.");
+        Assert.True(validateFirstAspireInvocationIndex > validateResolveIndex, "Validate script invokes Aspire before executable resolution.");
+
+        var stopCommandResolutionBlock = ExtractBlock(
+            stopScript,
+            "$aspireCommand = Get-Command",
+            "function Invoke-CheckedCapture {");
+
+        Assert.Contains("-Name \"aspire\"", stopCommandResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("-Name \"docker\"", stopCommandResolutionBlock, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            Regex.Count(stopCommandResolutionBlock, "-CommandType\\s+Application", RegexOptions.CultureInvariant));
+        Assert.Equal(
+            2,
+            Regex.Count(stopCommandResolutionBlock, "-ErrorAction\\s+SilentlyContinue", RegexOptions.CultureInvariant));
+        Assert.Equal(
+            2,
+            Regex.Count(stopCommandResolutionBlock, "Select-Object\\s+-First\\s+1", RegexOptions.CultureInvariant));
+        Assert.Contains("throw \"The Aspire CLI is required but was not found in PATH.\"", stopCommandResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("throw \"Docker is required but was not found in PATH.\"", stopCommandResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("$aspireExecutable = $aspireCommand.Source", stopCommandResolutionBlock, StringComparison.Ordinal);
+        Assert.Contains("$dockerExecutable = $dockerCommand.Source", stopCommandResolutionBlock, StringComparison.Ordinal);
+
+        Assert.Contains("-ExecutablePath $aspireExecutable", stopScript, StringComparison.Ordinal);
+        Assert.Contains("-ExecutablePath $dockerExecutable", stopScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Command \"aspire\"", stopScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("-Command \"docker\"", stopScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("& aspire", stopScript, StringComparison.Ordinal);
+        Assert.DoesNotContain("& docker", stopScript, StringComparison.Ordinal);
+
+        var stopValidationCompleteIndex = stopScript.IndexOf(
+            "$dockerExecutable = $dockerCommand.Source",
+            StringComparison.Ordinal);
+        var stopFirstAspireOrDockerOperationIndex = stopScript.IndexOf(
+            "$appHostResourceNames = @(Try-GetAppHostResourceNames",
+            StringComparison.Ordinal);
+
+        Assert.True(stopValidationCompleteIndex >= 0, "Stop script does not resolve required command executables.");
+        Assert.True(
+            stopFirstAspireOrDockerOperationIndex > stopValidationCompleteIndex,
+            "Stop script performs Aspire or Docker cleanup operations before command validation completes.");
     }
 
     [Fact]
@@ -362,6 +495,14 @@ public sealed class AspireArtifactTests
         return count;
     }
 
+    private static void AssertStableDirectiveVersion(string version, string directiveName)
+    {
+        Assert.DoesNotContain("*", version, StringComparison.Ordinal);
+        Assert.True(
+            Regex.IsMatch(version, @"^\d+\.\d+\.\d+$", RegexOptions.CultureInvariant),
+            $"Directive '{directiveName}' must use an exact stable version with no wildcard or prerelease suffix.");
+    }
+
     private static void AssertExactSet(
         IEnumerable<string> actualValues,
         IEnumerable<string> expectedValues,
@@ -376,6 +517,9 @@ public sealed class AspireArtifactTests
             .Order(StringComparer.Ordinal)
             .ToArray();
 
+        Assert.True(
+            expected.SequenceEqual(actual, StringComparer.Ordinal),
+            $"Unexpected {label}. Expected '{string.Join(", ", expected)}' but found '{string.Join(", ", actual)}'.");
         Assert.Equal(expected, actual);
         Assert.Equal(expected.Length, actual.Length);
     }

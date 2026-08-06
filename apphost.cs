@@ -1,6 +1,7 @@
 #:sdk Aspire.AppHost.Sdk@13.4.0
 #:property ManagePackageVersionsCentrally=false
 #:package Aspire.Hosting.SqlServer@13.4.0
+// Security pin: keeps NuGet Audit enabled by overriding vulnerable transitive MessagePack 2.5.192 in AppHost restore graph.
 #:package MessagePack@3.1.8
 
 using Aspire.Hosting;
