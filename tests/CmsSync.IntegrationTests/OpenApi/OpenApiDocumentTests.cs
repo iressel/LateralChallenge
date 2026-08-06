@@ -68,6 +68,34 @@ public sealed class OpenApiDocumentTests
         var entitiesGet = GetOperation(paths, "/api/entities", "get");
         var entityByIdGet = GetOperation(paths, "/api/entities/{entityId}", "get");
         var administrativePut = GetOperation(paths, "/api/entities/{entityId}/administrative-state", "put");
+        var allBusinessOperations = new[] { cmsPost, entitiesGet, entityByIdGet, administrativePut };
+
+        Assert.Equal(["CmsEvents"], GetOperationTags(cmsPost));
+        Assert.Equal(["CmsEntities"], GetOperationTags(entitiesGet));
+        Assert.Equal(["CmsEntities"], GetOperationTags(entityByIdGet));
+        Assert.Equal(["CmsEntities"], GetOperationTags(administrativePut));
+
+        var distinctOperationTags = allBusinessOperations
+            .SelectMany(GetOperationTags)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(tag => tag, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(["CmsEntities", "CmsEvents"], distinctOperationTags);
+        Assert.DoesNotContain(
+            allBusinessOperations.SelectMany(GetOperationTags),
+            tag => tag.Length > 0 && tag[0] == '#');
+        Assert.DoesNotContain(
+            allBusinessOperations.SelectMany(GetOperationTags),
+            tag => tag.Contains("/components/tags/", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            allBusinessOperations.SelectMany(GetOperationTags),
+            tag => string.Equals(tag, "CMS Entities", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            allBusinessOperations.SelectMany(GetOperationTags),
+            tag => string.Equals(tag, "CMS Events", StringComparison.Ordinal));
+
+        Assert.DoesNotContain("#/components/tags/CMS Entities", documentJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("#/components/tags/CMS Events", documentJson, StringComparison.Ordinal);
 
         Assert.Equal("ProcessCmsEvents", cmsPost.GetProperty("operationId").GetString());
         Assert.Equal("ListCmsEntities", entitiesGet.GetProperty("operationId").GetString());
@@ -322,7 +350,6 @@ public sealed class OpenApiDocumentTests
         Assert.Equal(["ConsumerBasic"], GetRequiredSecuritySchemes(entityByIdGet));
         Assert.Equal(["ConsumerBasic"], GetRequiredSecuritySchemes(administrativePut));
 
-        var allBusinessOperations = new[] { cmsPost, entitiesGet, entityByIdGet, administrativePut };
         Assert.All(
             allBusinessOperations,
             operation => Assert.True(
@@ -495,6 +522,24 @@ public sealed class OpenApiDocumentTests
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static string[] GetOperationTags(JsonElement operation)
+    {
+        if (!operation.TryGetProperty("tags", out var tags))
+        {
+            return [];
+        }
+
+        var values = tags
+            .EnumerateArray()
+            .Select(tag => tag.GetString())
+            .Where(tag => !string.IsNullOrWhiteSpace(tag))
+            .Cast<string>()
+            .ToArray();
+
+        Assert.Single(values);
+        return values;
     }
 
     private static JsonElement GetOperation(JsonElement paths, string path, string method)

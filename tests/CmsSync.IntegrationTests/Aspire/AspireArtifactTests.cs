@@ -423,17 +423,52 @@ public sealed class AspireArtifactTests
     {
         var readme = ReadRepositoryFile("README.md");
         var containerDoc = ReadRepositoryFile("docs/container-development.md");
+        var aspireReadmeSection = ExtractBlock(
+            readme,
+            "### Optional local Aspire orchestration path",
+            "## 6. Authentication and authorization contract");
 
-        Assert.Contains("aspire run --apphost ./apphost.cs", readme, StringComparison.Ordinal);
-        Assert.Contains("pwsh ./scripts/stop-aspire-local.ps1", readme, StringComparison.Ordinal);
-        Assert.Contains("pwsh ./scripts/stop-aspire-local.ps1 -RemoveData", readme, StringComparison.Ordinal);
-        Assert.Contains("can remain running until `stop-aspire-local.ps1` removes the SQL container", readme, StringComparison.Ordinal);
-        Assert.Contains("Do not run Compose and Aspire simultaneously on ports `8080` and `14333`.", readme, StringComparison.Ordinal);
-        Assert.Contains("Aspire remains optional and Compose remains independently supported.", readme, StringComparison.Ordinal);
-        Assert.Contains("No production deployment behavior changed and no seventh solution project was added.", readme, StringComparison.Ordinal);
+        Assert.Contains("dotnet --version", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("docker version", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("aspire --version", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("aspire doctor", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("Set-ExecutionPolicy -Scope Process Bypass", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("powershell.exe -NoProfile -ExecutionPolicy Bypass", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("Process-scoped `Bypass` affects only the current terminal session.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("aspire certs trust", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains(".\\scripts\\configure-aspire-local.ps1 -RotateSecrets", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("/login?t=...", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("Do not run Compose and Aspire at the same time on ports `8080` and `14333`.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("Expected lifecycle states:", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("`sql`: Running and healthy.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("`db-init`: Exited successfully.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("`migration`: Exited successfully.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("`api`: Running and healthy.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("http://localhost:8080/swagger", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("Expected operation groups in Swagger UI:", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("`CmsEntities`", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("`CmsEvents`", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("No operation group beginning with `#/components/tags/` should appear.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("aspire certs clean", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("dotnet dev-certs https --clean", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("pwsh ./scripts/stop-aspire-local.ps1", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("pwsh ./scripts/stop-aspire-local.ps1 -RemoveData", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("can remain running until `stop-aspire-local.ps1` removes the SQL container", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("Aspire remains optional and Compose remains independently supported.", aspireReadmeSection, StringComparison.Ordinal);
+        Assert.Contains("No production deployment behavior changed and no seventh solution project was added.", aspireReadmeSection, StringComparison.Ordinal);
+
+        Assert.DoesNotMatch(
+            new Regex(@"/login\?t=(?!\.\.\.)[^\s)]+", RegexOptions.CultureInvariant),
+            aspireReadmeSection);
+        Assert.DoesNotMatch(
+            new Regex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b", RegexOptions.CultureInvariant),
+            aspireReadmeSection);
+        Assert.DoesNotContain("C:\\", aspireReadmeSection, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("/Users/", aspireReadmeSection, StringComparison.Ordinal);
+
         Assert.DoesNotContain(
             "aspire start --apphost ./apphost.cs --isolated --non-interactive",
-            readme,
+            aspireReadmeSection,
             StringComparison.Ordinal);
 
         Assert.Contains("aspire run --apphost ./apphost.cs", containerDoc, StringComparison.Ordinal);
